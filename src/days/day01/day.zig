@@ -65,7 +65,41 @@ fn solveFirst(allocator: utils.Allocator, input: utils.Str) utils.SolveResult {
         }
     }
 
-    return .{ .u64 = sum };
+    return utils.Solution{ .u64 = sum };
+}
+
+fn getOverflowCount(dial: i32, num: i32, pos: bool) u32 {
+    if (pos) {
+        const amount: u32 = @intCast(@divTrunc(dial + num, 100));
+
+        return amount;
+    }
+
+    var n: i32 = num;
+    var sum: u32 = 0;
+
+    while (n != 0) {
+        if (n >= 100) {
+            n -= 100;
+            sum += 1;
+        } else {
+            if (dial != 0 and dial <= n) {
+                sum += 1;
+            }
+
+            n = 0;
+        }
+    }
+
+    return sum;
+
+    // const val: i32 = dial - num - 100;
+
+    // const amount: i32 = @intCast(@divTrunc(val, -100));
+
+    // std.debug.print("low {d} {d} {d}\n", .{ dial, num, amount });
+
+    // return @intCast(amount);
 }
 
 fn solveSecond(allocator: utils.Allocator, input: utils.Str) utils.SolveResult {
@@ -90,11 +124,17 @@ fn solveSecond(allocator: utils.Allocator, input: utils.Str) utils.SolveResult {
         switch (val.?.typ) {
             'L' => {
                 const dial_i32: i32 = dial;
+                const num: i32 = val.?.number;
 
-                dial = modHelper(dial_i32 - (val.?.number), 100);
+                sum += getOverflowCount(dial_i32, num, false);
+
+                dial = modHelper(dial_i32 - num, 100);
             },
             'R' => {
                 const dial_i32: i32 = dial;
+                const num: i32 = val.?.number;
+
+                sum += getOverflowCount(dial_i32, num, true);
 
                 dial = modHelper(dial_i32 + (val.?.number), 100);
             },
@@ -104,17 +144,15 @@ fn solveSecond(allocator: utils.Allocator, input: utils.Str) utils.SolveResult {
             },
         }
 
-        if (dial == 0) {
-            sum += 1;
-        }
+        std.debug.print("dial {d} {d}\n", .{ dial, sum });
     }
 
-    return .{ .u64 = sum };
+    return utils.Solution{ .u64 = sum };
 }
 
 const day = utils.Day{
     .solver = utils.Solver{ .individual = .{ .first = solveFirst, .second = solveSecond } },
-    .examples = .{ .first = .{ .implemented = .{ .solution = .{ .u64 = 3 } } }, .second = .{ .implemented = .{ .solution = .{ .u64 = 6 } } } },
+    .examples = .{ .first = .{ .implemented = .{ .solution = .{ .u64 = 3 }, .real_value = .{ .u64 = 982 } } }, .second = .{ .implemented = .{ .solution = .{ .u64 = 6 }, .real_value = .{ .u64 = 6106 } } } },
     .root = @import("generated").root,
     .same_input = true,
 };
@@ -131,4 +169,17 @@ test "day 01" {
     defer _ = gpa.deinit();
 
     try day.@"test"(gpa.allocator());
+}
+
+test "day 01 - manual" {
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    defer _ = gpa.deinit();
+
+    const rotation_test_1 = try solveSecond(gpa.allocator(), "R1000");
+
+    try std.testing.expectEqual(utils.Solution{ .u64 = 10 }, rotation_test_1);
+
+    const rotation_test_2 = try solveSecond(gpa.allocator(), "R1000");
+
+    try std.testing.expectEqual(utils.Solution{ .u64 = 10 }, rotation_test_2);
 }

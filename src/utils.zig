@@ -71,6 +71,7 @@ pub const Solver = union(enum) { both: SolveFn, individual: IndividualSolver };
 pub const Example = struct {
     solution: Solution,
     file: ?Str = null,
+    real_value: ?Solution,
 };
 
 pub const ExampleWrapper = union(enum) { todo, implemented: Example };
@@ -268,7 +269,7 @@ pub const Day = struct {
                     return;
                 };
 
-                try std.testing.expectEqual(solution_1, ex1.solution);
+                try std.testing.expectEqual(ex1.solution, solution_1);
             }
         }
 
@@ -286,7 +287,58 @@ pub const Day = struct {
                     return;
                 };
 
-                try std.testing.expectEqual(solution_2, ex2.solution);
+                try std.testing.expectEqual(ex2.solution, solution_2);
+            }
+        }
+
+        // "real" solutions, to test everything again!
+
+        {
+            const example_1 = Day.getExample(self.examples.first);
+
+            if (example_1) |ex1| {
+                if (ex1.real_value) |real_sol| {
+                    const file_1 = try self.getNormalFile(allocator, .first);
+                    if (file_1) |input_1| {
+                        defer allocator.free(input_1);
+
+                        const solution_1 = self.solve(allocator, input_1, .first) catch |err| {
+                            try Day.printError(.first, false, err);
+                            try std.testing.expect(false);
+                            return;
+                        };
+
+                        try std.testing.expectEqual(real_sol, solution_1);
+                    } else {
+                        try Day.printErrorString("No file for part 1 found\n");
+                        try std.testing.expect(false);
+                    }
+                }
+            }
+        }
+
+        {
+            const example_2 = Day.getExample(self.examples.second);
+
+            if (example_2) |ex2| {
+                if (ex2.real_value) |real_sol| {
+                    const which_one: WhichPart = if (self.same_input) .first else .second;
+                    const file_2 = try self.getNormalFile(allocator, which_one);
+                    if (file_2) |input_2| {
+                        defer allocator.free(input_2);
+
+                        const solution_2 = self.solve(allocator, input_2, .second) catch |err| {
+                            try Day.printError(.second, false, err);
+                            try std.testing.expect(false);
+                            return;
+                        };
+
+                        try std.testing.expectEqual(real_sol, solution_2);
+                    } else {
+                        try Day.printErrorString("No file for part 2 found\n");
+                        try std.testing.expect(false);
+                    }
+                }
             }
         }
     }
