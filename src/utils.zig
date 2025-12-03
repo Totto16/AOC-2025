@@ -6,6 +6,7 @@ pub const StrMap = std.StringHashMap;
 pub const BitSet = std.DynamicBitSet;
 pub const Str = []const u8;
 const ansi_term = @import("ansi_term");
+const tty = @import("tty.zig");
 
 // Add utility functions here
 
@@ -169,10 +170,8 @@ pub const Day = struct {
 
         switch (err) {
             error.PredicateNotMet => {
-                //TODO: use custom formatter!
-                try ansi_term.format.updateStyle(stderr, ansi_term.style.Style{ .foreground = .Red }, null);
-                try stderr.print("{s} {s}: predicate not met\n", .{ type_, part });
-                try ansi_term.format.resetStyle(stderr);
+                try tty.print(stderr, "{any}{s} {s}: {any}predicate not met{any}\n", .{ ansi_term.style.Style{ .foreground = .Red }, type_, part, ansi_term.style.Style{ .foreground = .Red, .font_style = .{ .bold = true } }, tty.Reset{} });
+
                 try stderr.flush();
 
                 return;
