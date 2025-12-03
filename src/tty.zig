@@ -164,8 +164,4 @@ pub fn print(w: *std.Io.Writer, comptime fmt: []const u8, args: anytype) std.Io.
             else => @compileError(std.fmt.comptimePrint("{d}", .{missing_count}) ++ " unused arguments in '" ++ fmt ++ "'"),
         }
     }
-
-    // try ansi_term.format.updateStyle(stderr, , null);
-
-    //try ansi_term.format.resetStyle(stderr);
 }

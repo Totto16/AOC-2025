@@ -154,9 +154,9 @@ pub const Day = struct {
         var stderr_writer = std.fs.File.stderr().writer(&stderr_buffer);
         const stderr = &stderr_writer.interface;
 
-        try ansi_term.format.updateStyle(stderr, ansi_term.style.Style{ .foreground = .Red }, null);
-        try stderr.print(fmt, .{});
-        try ansi_term.format.resetStyle(stderr);
+        try tty.print(stderr, "{any}" ++ fmt ++ "\n{any}", .{ ansi_term.style.Style{ .foreground = .Red }, tty.Reset{} });
+        try stderr.flush();
+
         try stderr.flush();
     }
 
@@ -171,31 +171,24 @@ pub const Day = struct {
         switch (err) {
             error.PredicateNotMet => {
                 try tty.print(stderr, "{any}{s} {s}: {any}predicate not met{any}\n", .{ ansi_term.style.Style{ .foreground = .Red }, type_, part, ansi_term.style.Style{ .foreground = .Red, .font_style = .{ .bold = true } }, tty.Reset{} });
-
                 try stderr.flush();
 
                 return;
             },
             error.ParseError => {
-                try ansi_term.format.updateStyle(stderr, ansi_term.style.Style{ .foreground = .Red }, null);
-                try stderr.print("{s} {s}: parse error\n", .{ type_, part });
-                try ansi_term.format.resetStyle(stderr);
+                try tty.print(stderr, "{any}{s} {s}: {any}parse error{any}\n", .{ ansi_term.style.Style{ .foreground = .Red }, type_, part, ansi_term.style.Style{ .foreground = .Red, .font_style = .{ .bold = true } }, tty.Reset{} });
                 try stderr.flush();
 
                 return;
             },
             error.NotSolved => {
-                try ansi_term.format.updateStyle(stderr, ansi_term.style.Style{ .foreground = .Red }, null);
-                try stderr.print("{s} {s}: not solved\n", .{ type_, part });
-                try ansi_term.format.resetStyle(stderr);
+                try tty.print(stderr, "{any}{s} {s}: {any}not solved{any}\n", .{ ansi_term.style.Style{ .foreground = .Red }, type_, part, ansi_term.style.Style{ .foreground = .Red, .font_style = .{ .bold = true } }, tty.Reset{} });
                 try stderr.flush();
 
                 return;
             },
             error.OtherError => {
-                try ansi_term.format.updateStyle(stderr, ansi_term.style.Style{ .foreground = .Red }, null);
-                try stderr.print("{s} {s} other error\n", .{ type_, part });
-                try ansi_term.format.resetStyle(stderr);
+                try tty.print(stderr, "{any}{s} {s}: {any}other error{any}\n", .{ ansi_term.style.Style{ .foreground = .Red }, type_, part, ansi_term.style.Style{ .foreground = .Red, .font_style = .{ .bold = true } }, tty.Reset{} });
                 try stderr.flush();
 
                 return;
@@ -208,14 +201,12 @@ pub const Day = struct {
     fn printResult(which: WhichPart, solution: Solution) !void {
         const part = if (which == .first) "1" else "2";
 
-        var stderr_buffer: [1024]u8 = undefined;
-        var stderr_writer = std.fs.File.stderr().writer(&stderr_buffer);
-        const stderr = &stderr_writer.interface;
+        var stdout_buffer: [1024]u8 = undefined;
+        var stdout_writer = std.fs.File.stdout().writer(&stdout_buffer);
+        const stdout = &stdout_writer.interface;
 
-        try ansi_term.format.updateStyle(stderr, ansi_term.style.Style{ .foreground = .Green }, null);
-        try stderr.print("Solution for part {s} is: {f}\n", .{ part, solution });
-        try ansi_term.format.resetStyle(stderr);
-        try stderr.flush();
+        try tty.print(stdout, "{any}Solution for part {any}{s}{any} is: {any}{f}{any}\n", .{ ansi_term.style.Style{ .foreground = .Green }, ansi_term.style.Style{ .foreground = .Cyan, .font_style = .{ .bold = true } }, part, ansi_term.style.Style{ .foreground = .Green }, ansi_term.style.Style{ .foreground = .Magenta, .font_style = .{ .bold = true } }, solution, tty.Reset{} });
+        try stdout.flush();
     }
 
     pub fn run(self: *const Day, allocator: Allocator) !void {
