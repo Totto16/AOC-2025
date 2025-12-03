@@ -53,9 +53,15 @@ pub fn build(b: *std.Build) !void {
     const install_all = b.step("install_all", "Install all days");
     const run_all = b.step("run_all", "Run all days");
 
+    const pretty_dep = b.dependency("pretty", .{ .target = target, .optimize = optimize });
+
+    const pretty_mod_kv = ModuleKV{ .module = pretty_dep.module("pretty"), .name = "pretty" };
+
     const utils_mod = b.createModule(.{
         .root_source_file = b.path("src/utils.zig"),
     });
+
+    utils_mod.addImport(pretty_mod_kv.name, pretty_mod_kv.module);
 
     const utils_mod_kv = ModuleKV{ .module = utils_mod, .name = "utils" };
 
@@ -115,7 +121,7 @@ pub fn build(b: *std.Build) !void {
             }),
         });
 
-        linkObject(b, day_exe, &[_]ModuleKV{ utils_mod_kv, generated_module_kv });
+        linkObject(b, day_exe, &[_]ModuleKV{ utils_mod_kv, pretty_mod_kv, generated_module_kv });
 
         const install_cmd = b.addInstallArtifact(day_exe, .{});
 
@@ -127,7 +133,7 @@ pub fn build(b: *std.Build) !void {
             }),
         });
 
-        linkObject(b, build_test, &[_]ModuleKV{ utils_mod_kv, generated_module_kv });
+        linkObject(b, build_test, &[_]ModuleKV{ utils_mod_kv, pretty_mod_kv, generated_module_kv });
 
         b.installArtifact(build_test);
 
@@ -179,7 +185,7 @@ pub fn build(b: *std.Build) !void {
             }),
         });
 
-        linkObject(b, test_cmd, &[_]ModuleKV{utils_mod_kv});
+        linkObject(b, test_cmd, &[_]ModuleKV{ utils_mod_kv, pretty_mod_kv });
 
         test_utils.dependOn(&test_cmd.step);
         b.installArtifact(test_cmd);
@@ -195,7 +201,7 @@ pub fn build(b: *std.Build) !void {
         }),
     });
 
-    linkObject(b, all_tests, &[_]ModuleKV{utils_mod_kv});
+    linkObject(b, all_tests, &[_]ModuleKV{ utils_mod_kv, pretty_mod_kv });
 
     const run_all_tests = b.addRunArtifact(all_tests);
     test_all.dependOn(&run_all_tests.step);
