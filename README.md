@@ -3,4 +3,21 @@
 # AoC 2025
 Welcome to my Advent of Code 2025 repository! The solutions are written in Zig. The solutions aren't optimized for speed, more for readability.
 
-This is still WIP
+## Running the solutions
+For running the code you need [zig](https://ziglang.org/learn/getting-started/) > 0.15.2.
+
+Then you can use zig to compile and than execute the solutions
+
+
+```bash
+zig build
+zig build test_day01 # or day<xx> or test_day<xx> etc.
+```
+
+<!--- advent_readme_stars table --->
+## 2025 Results
+
+|                     Day                      | Part 1 | Part 2 |
+| :------------------------------------------: | :----: | :----: |
+| [Day 1](https://adventofcode.com/2025/day/1) |   ⭐    |   ⭐    |
+<!--- advent_readme_stars table --->
