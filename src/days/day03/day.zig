@@ -63,11 +63,11 @@ pub fn max2DigitNumber(values: []const BatterieJolt) u64 {
     var best_tens: u64 = 0;
     var best: u64 = 0;
 
-    for (values) |d| {
-        const num = best_tens * 10 + d;
+    for (values) |val| {
+        const num = best_tens * 10 + val;
         if (num > best) best = num;
 
-        if (d > best_tens) best_tens = d;
+        if (val > best_tens) best_tens = val;
     }
 
     return best;
@@ -82,6 +82,7 @@ fn solveFirst(allocator: utils.Allocator, input: utils.Str) utils.SolveResult {
     for (batteries.inner.items) |bank| {
         const jolts = bank.inner.items;
 
+        std.debug.assert(jolts.len >= 2);
         const max_jolt: u64 = max2DigitNumber(jolts);
 
         sum += max_jolt;
@@ -90,11 +91,67 @@ fn solveFirst(allocator: utils.Allocator, input: utils.Str) utils.SolveResult {
     return utils.Solution{ .u64 = sum };
 }
 
-fn solveSecond(allocator: utils.Allocator, input: utils.Str) utils.SolveResult {
-    _ = allocator;
-    _ = input;
+pub fn maxSubsequenceDigitsImpl(
+    values: []const u8,
+    out: []u8,
+) void {
+    const out_len = out.len;
 
-    return utils.Solution{ .u64 = 0 };
+    var stack_len: usize = 0;
+    var to_remove: usize = values.len - out_len;
+
+    for (values) |val| {
+        while (stack_len > 0 and to_remove > 0 and out[stack_len - 1] < val) {
+            stack_len -= 1;
+            to_remove -= 1;
+        }
+
+        if (stack_len < out_len) {
+            out[stack_len] = val;
+            stack_len += 1;
+        } else {
+            to_remove -= 1; // can't push, but consumed a digit, effectively skipping that digit
+        }
+    }
+}
+
+pub fn max12DigitNumber(values: []const BatterieJolt) u64 {
+    // solve the maximum subsequence problem using a stack
+
+    var out: [12]u8 = undefined;
+
+    maxSubsequenceDigitsImpl(values, &out);
+
+    var multiplier: u64 = 1;
+    var result: u64 = 0;
+    var i = out.len;
+
+    while (i != 0) : (i -= 1) {
+        const val = out[i - 1];
+
+        result += val * multiplier;
+        multiplier *= 10;
+    }
+
+    return result;
+}
+
+fn solveSecond(allocator: utils.Allocator, input: utils.Str) utils.SolveResult {
+    var batteries = try parseBatteries(allocator, input);
+    defer batteries.deinit();
+
+    var sum: u64 = 0;
+
+    for (batteries.inner.items) |bank| {
+        const jolts = bank.inner.items;
+
+        std.debug.assert(jolts.len >= 12);
+        const max_jolt: u64 = max12DigitNumber(jolts);
+
+        sum += max_jolt;
+    }
+
+    return utils.Solution{ .u64 = sum };
 }
 
 const day = utils.Day{
@@ -102,7 +159,10 @@ const day = utils.Day{
     .examples = .{ .first = .{ .implemented = .{
         .solution = .{ .u64 = 357 },
         .real_value = .{ .u64 = 16927 },
-    } }, .second = .todo },
+    } }, .second = .{ .implemented = .{
+        .solution = .{ .u64 = 3121910778619 },
+        .real_value = .{ .u64 = 167384358365132 },
+    } } },
     .root = @import("generated").root,
     .same_input = true,
 };
@@ -133,7 +193,7 @@ fn testGetBatteries(allocator: utils.Allocator, val: utils.Str) ![]const Batteri
     return res;
 }
 
-test "day 03 - manual - 1 . part - faster solution" {
+test "day 03 - manual - 1. part - faster solution" {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     defer _ = gpa.deinit();
 
@@ -146,4 +206,19 @@ test "day 03 - manual - 1 . part - faster solution" {
     try std.testing.expectEqual(89, max2DigitNumber(try testGetBatteries(fast_alloc, "811111111111119")));
     try std.testing.expectEqual(78, max2DigitNumber(try testGetBatteries(fast_alloc, "234234234234278")));
     try std.testing.expectEqual(92, max2DigitNumber(try testGetBatteries(fast_alloc, "818181911112111")));
+}
+
+test "day 03 - manual - 2. part - faster solution" {
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    defer _ = gpa.deinit();
+
+    var arena = std.heap.ArenaAllocator.init(gpa.allocator());
+    defer arena.deinit();
+
+    const fast_alloc = arena.allocator();
+
+    try std.testing.expectEqual(987654321111, max12DigitNumber(try testGetBatteries(fast_alloc, "987654321111111")));
+    try std.testing.expectEqual(811111111119, max12DigitNumber(try testGetBatteries(fast_alloc, "811111111111119")));
+    try std.testing.expectEqual(434234234278, max12DigitNumber(try testGetBatteries(fast_alloc, "234234234234278")));
+    try std.testing.expectEqual(888911112111, max12DigitNumber(try testGetBatteries(fast_alloc, "818181911112111")));
 }
