@@ -286,7 +286,7 @@ pub const Day = struct {
 
                 const input_1 = readFileAbs(allocator, file_1) catch |err| {
                     if (err == error.FileNotFound) {
-                        try Day.printErrorStr(.first, false, "File not found: '{s}'", .{file_1});
+                        try self.printErrorStr(.first, false, "File not found: '{s}'", .{file_1});
                         try std.testing.expect(false);
                         return;
                     }
@@ -295,7 +295,7 @@ pub const Day = struct {
                 defer allocator.free(input_1);
 
                 const solution_1 = self.solve(allocator, input_1, .first) catch |err| {
-                    try Day.printError(.first, false, err);
+                    try self.printError(.first, false, err);
                     try std.testing.expect(false);
                     return;
                 };
@@ -314,7 +314,7 @@ pub const Day = struct {
 
                 const input_2 = readFileAbs(allocator, file_2) catch |err| {
                     if (err == error.FileNotFound) {
-                        try Day.printErrorStr(.second, false, "File not found: '{s}'", .{file_2});
+                        try self.printErrorStr(.second, false, "File not found: '{s}'", .{file_2});
                         try std.testing.expect(false);
                         return;
                     }
@@ -323,7 +323,7 @@ pub const Day = struct {
                 defer allocator.free(input_2);
 
                 const solution_2 = self.solve(allocator, input_2, .second) catch |err| {
-                    try Day.printError(.second, false, err);
+                    try self.printError(.second, false, err);
                     try std.testing.expect(false);
                     return;
                 };
@@ -344,7 +344,7 @@ pub const Day = struct {
                         defer allocator.free(input_1);
 
                         const solution_1 = self.solve(allocator, input_1, .first) catch |err| {
-                            try Day.printError(.first, false, err);
+                            try self.printError(.first, false, err);
                             try std.testing.expect(false);
                             return;
                         };
@@ -369,7 +369,7 @@ pub const Day = struct {
                         defer allocator.free(input_2);
 
                         const solution_2 = self.solve(allocator, input_2, .second) catch |err| {
-                            try Day.printError(.second, false, err);
+                            try self.printError(.second, false, err);
                             try std.testing.expect(false);
                             return;
                         };

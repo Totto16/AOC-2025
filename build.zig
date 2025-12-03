@@ -71,6 +71,7 @@ pub fn build(b: *std.Build) !void {
 
     const install_all = b.step("install_all", "Install all days");
     const run_all = b.step("run_all", "Run all days");
+    const test_all = b.step("test_all", "Run all tests");
 
     const ansi_term_dep = b.dependency("ansi_term", .{ .target = target, .optimize = optimize });
 
@@ -98,7 +99,7 @@ pub fn build(b: *std.Build) !void {
             const generate_file_src = try b.cache_root.join(alloc, &[_][]const u8{generatedName});
             defer alloc.free(generate_file_src);
 
-            const file_content = b.fmt("pub const root = \"{s}\";", .{zigFileRoot});
+            const file_content = b.fmt("pub const root : []const u8 = \"{s}\";\n pub const day : u32 = {d};", .{ zigFileRoot, day });
             alloc.free(zigFileRoot);
 
             {
@@ -173,6 +174,8 @@ pub fn build(b: *std.Build) !void {
                 const step = b.step(step_key, step_desc);
                 step.dependOn(&run_test.step);
             }
+
+            test_all.dependOn(&run_test.step);
 
             const run_cmd = b.addRunArtifact(day_exe);
             b.installArtifact(day_exe);
