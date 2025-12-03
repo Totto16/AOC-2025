@@ -5,7 +5,7 @@ pub const Map = std.AutoHashMap;
 pub const StrMap = std.StringHashMap;
 pub const BitSet = std.DynamicBitSet;
 pub const Str = []const u8;
-const pretty = @import("pretty");
+const ansi_term = @import("ansi_term");
 
 // Add utility functions here
 
@@ -131,29 +131,57 @@ pub const Day = struct {
         return result;
     }
 
-    fn printError(allocator: Allocator, which: WhichPart, is_normal: bool, err: SolveErrors) !void {
+    fn printErrorString(str: []const u8) !void {
+        var stderr_buffer: [1024]u8 = undefined;
+        var stderr_writer = std.fs.File.stderr().writer(&stderr_buffer);
+        const stderr = &stderr_writer.interface;
+
+        try ansi_term.format.updateStyle(stderr, ansi_term.style.Style{ .foreground = .Red });
+        stderr.print(str, .{});
+        try ansi_term.format.resetStyle(stderr);
+        try stderr.flush();
+    }
+
+    fn printError(which: WhichPart, is_normal: bool, err: SolveErrors) !void {
         const part = if (which == .first) "1" else "2";
         const type_ = if (is_normal) "Part" else "Example";
 
-        //TODO: use other pretty print lib
-        _ = part;
-        _ = type_;
+        var stderr_buffer: [1024]u8 = undefined;
+        var stderr_writer = std.fs.File.stderr().writer(&stderr_buffer);
+        const stderr = &stderr_writer.interface;
 
         switch (err) {
             error.PredicateNotMet => {
-                try pretty.print(allocator, "Part {s}: predicate not met", .{});
+                //TODO: use custom formatter!
+                try ansi_term.format.updateStyle(stderr, ansi_term.style.Style{ .foreground = .Red }, null);
+                try stderr.print("{s} {s}: predicate not met\n", .{ type_, part });
+                try ansi_term.format.resetStyle(stderr);
+                try stderr.flush();
+
                 return;
             },
             error.ParseError => {
-                try pretty.print(allocator, "Part {s}: parse error", .{});
+                try ansi_term.format.updateStyle(stderr, ansi_term.style.Style{ .foreground = .Red }, null);
+                try stderr.print("{s} {s}: parse error\n", .{ type_, part });
+                try ansi_term.format.resetStyle(stderr);
+                try stderr.flush();
+
                 return;
             },
             error.NotSolved => {
-                try pretty.print(allocator, "Part {s}: not solved", .{});
+                try ansi_term.format.updateStyle(stderr, ansi_term.style.Style{ .foreground = .Red }, null);
+                try stderr.print("{s} {s}: not solved\n", .{ type_, part });
+                try ansi_term.format.resetStyle(stderr);
+                try stderr.flush();
+
                 return;
             },
             error.OtherError => {
-                try pretty.print(allocator, "Part {s}: other error", .{});
+                try ansi_term.format.updateStyle(stderr, ansi_term.style.Style{ .foreground = .Red }, null);
+                try stderr.print("{s} {s} other error\n", .{ type_, part });
+                try ansi_term.format.resetStyle(stderr);
+                try stderr.flush();
+
                 return;
             },
         }
@@ -176,13 +204,13 @@ pub const Day = struct {
             if (file_1) |input_1| {
                 defer allocator.free(input_1);
                 const solution_1 = self.solve(allocator, input_1, .first) catch |err| {
-                    try Day.printError(allocator, .first, true, err);
+                    try Day.printError(.first, true, err);
                     return;
                 };
 
                 try Day.printResult(allocator, .first, solution_1);
             } else {
-                try pretty.print(allocator, "No file for part 1 found", .{});
+                try Day.printErrorString("No file for part 1 found\n");
             }
         }
 
@@ -198,7 +226,7 @@ pub const Day = struct {
                 defer allocator.free(input_1);
 
                 const solution_1 = self.solve(allocator, input_1, .first) catch |err| {
-                    try Day.printError(allocator, .first, false, err);
+                    try Day.printError(.first, false, err);
                     try std.testing.expect(false);
                     return;
                 };
@@ -215,7 +243,7 @@ pub const Day = struct {
                 defer allocator.free(input_2);
 
                 const solution_2 = self.solve(allocator, input_2, .second) catch |err| {
-                    try Day.printError(allocator, .second, false, err);
+                    try Day.printError(.second, false, err);
                     try std.testing.expect(false);
                     return;
                 };
