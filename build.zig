@@ -77,13 +77,24 @@ pub fn build(b: *std.Build) !void {
 
     const ansi_term_mod_kv = ModuleKV{ .module = ansi_term_dep.module("ansi_term"), .name = "ansi_term" };
 
+    const tty_mod = b.createModule(.{
+        .root_source_file = b.path("src/tty.zig"),
+    });
+
+    tty_mod.addImport(ansi_term_mod_kv.name, ansi_term_mod_kv.module);
+
+    const tty_mod_kv = ModuleKV{ .module = tty_mod, .name = "tty" };
+
     const utils_mod = b.createModule(.{
         .root_source_file = b.path("src/utils.zig"),
     });
 
     utils_mod.addImport(ansi_term_mod_kv.name, ansi_term_mod_kv.module);
+    utils_mod.addImport(tty_mod_kv.name, tty_mod_kv.module);
 
     const utils_mod_kv = ModuleKV{ .module = utils_mod, .name = "utils" };
+
+    const test_runner: std.Build.Step.Compile.TestRunner = std.Build.Step.Compile.TestRunner{ .path = b.path("src/test_runner.zig"), .mode = .simple };
 
     // Set up a compile target for each day
     var day: u32 = 1;
@@ -146,15 +157,13 @@ pub fn build(b: *std.Build) !void {
 
             const install_cmd = b.addInstallArtifact(day_exe, .{});
 
-            const build_test = b.addTest(.{
-                .root_module = b.createModule(.{
-                    .root_source_file = b.path(zigFile),
-                    .target = target,
-                    .optimize = optimize,
-                }),
-            });
+            const build_test = b.addTest(.{ .root_module = b.createModule(.{
+                .root_source_file = b.path(zigFile),
+                .target = target,
+                .optimize = optimize,
+            }), .test_runner = test_runner });
 
-            linkObject(b, build_test, &[_]ModuleKV{ utils_mod_kv, ansi_term_mod_kv, generated_module_kv });
+            linkObject(b, build_test, &[_]ModuleKV{ utils_mod_kv, ansi_term_mod_kv, tty_mod_kv, generated_module_kv });
 
             b.installArtifact(build_test);
 
@@ -201,15 +210,13 @@ pub fn build(b: *std.Build) !void {
     // Set up tests for utils.zig
     {
         const test_utils = b.step("test_utils", "Run tests in utils.zig");
-        const test_cmd = b.addTest(.{
-            .root_module = b.createModule(.{
-                .root_source_file = b.path("src/utils.zig"),
-                .target = target,
-                .optimize = optimize,
-            }),
-        });
+        const test_cmd = b.addTest(.{ .root_module = b.createModule(.{
+            .root_source_file = b.path("src/utils.zig"),
+            .target = target,
+            .optimize = optimize,
+        }), .test_runner = test_runner });
 
-        linkObject(b, test_cmd, &[_]ModuleKV{ utils_mod_kv, ansi_term_mod_kv });
+        linkObject(b, test_cmd, &[_]ModuleKV{ utils_mod_kv, ansi_term_mod_kv, tty_mod_kv });
 
         test_utils.dependOn(&test_cmd.step);
         b.installArtifact(test_cmd);

@@ -7,7 +7,7 @@ pub const StrMap = std.StringHashMap;
 pub const BitSet = std.DynamicBitSet;
 pub const Str = []const u8;
 const ansi_term = @import("ansi_term");
-const tty = @import("tty.zig");
+const tty = @import("tty");
 
 // Add utility functions here
 
@@ -37,6 +37,9 @@ pub const assert = std.debug.assert;
 pub const sort = std.sort.block;
 pub const asc = std.sort.asc;
 pub const desc = std.sort.desc;
+
+pub const StdoutWriter = tty.StdoutWriter;
+pub const StderrWriter = tty.StderrWriter;
 
 pub const Solution = union(enum) {
     u64: u64,
@@ -81,48 +84,6 @@ pub const ExampleWrapper = union(enum) { todo, implemented: Example };
 pub const Examples = struct { first: ExampleWrapper, second: ExampleWrapper };
 
 const WhichPart = enum(u1) { first = 0, second = 1 };
-
-const buffer_length: comptime_int = 4096;
-
-pub const StderrWriter = struct {
-    pub fn print(comptime fmt: []const u8, args: anytype) !void {
-        var stderr_buffer: [buffer_length]u8 = undefined;
-        var stderr_writer = std.fs.File.stderr().writer(&stderr_buffer);
-        const stderr = &stderr_writer.interface;
-
-        const ArgsType = @TypeOf(args);
-        const args_type_info = @typeInfo(ArgsType);
-        if (args_type_info != .@"struct") {
-            @compileError("expected tuple or struct argument, found " ++ @typeName(ArgsType));
-        }
-
-        const new_fmt = "{any}" ++ fmt ++ "{any}";
-        const new_args = .{ansi_term.style.Style{ .foreground = .Red }} ++ args ++ .{tty.Reset{}};
-
-        try tty.print(stderr, new_fmt, new_args);
-        try stderr.flush();
-    }
-};
-
-pub const StdoutWriter = struct {
-    pub fn print(comptime fmt: []const u8, args: anytype) !void {
-        var stdout_buffer: [buffer_length]u8 = undefined;
-        var stdout_writer = std.fs.File.stdout().writer(&stdout_buffer);
-        const stdout = &stdout_writer.interface;
-
-        const ArgsType = @TypeOf(args);
-        const args_type_info = @typeInfo(ArgsType);
-        if (args_type_info != .@"struct") {
-            @compileError("expected tuple or struct argument, found " ++ @typeName(ArgsType));
-        }
-
-        const new_fmt = "{any}" ++ fmt ++ "{any}";
-        const new_args = .{ansi_term.style.Style{ .foreground = .Green }} ++ args ++ .{tty.Reset{}};
-
-        try tty.print(stdout, new_fmt, new_args);
-        try stdout.flush();
-    }
-};
 
 const day_fmt = "{any}[Day {any}{d}{any}]{any}";
 

@@ -21,7 +21,9 @@ fn get_color_type(value: anytype) ?ColorType {
     return null;
 }
 
-pub fn print(w: *std.Io.Writer, comptime fmt: []const u8, args: anytype) std.Io.Writer.Error!void {
+pub const print = printImpl;
+
+pub fn printImpl(w: *std.Io.Writer, comptime fmt: []const u8, args: anytype) std.Io.Writer.Error!void {
     const ArgsType = @TypeOf(args);
     const args_type_info = @typeInfo(ArgsType);
     if (args_type_info != .@"struct") {
@@ -165,3 +167,45 @@ pub fn print(w: *std.Io.Writer, comptime fmt: []const u8, args: anytype) std.Io.
         }
     }
 }
+
+const buffer_length: comptime_int = 4096;
+
+pub const StderrWriter = struct {
+    pub fn print(comptime fmt: []const u8, args: anytype) !void {
+        var stderr_buffer: [buffer_length]u8 = undefined;
+        var stderr_writer = std.fs.File.stderr().writer(&stderr_buffer);
+        const stderr = &stderr_writer.interface;
+
+        const ArgsType = @TypeOf(args);
+        const args_type_info = @typeInfo(ArgsType);
+        if (args_type_info != .@"struct") {
+            @compileError("expected tuple or struct argument, found " ++ @typeName(ArgsType));
+        }
+
+        const new_fmt = "{any}" ++ fmt ++ "{any}";
+        const new_args = .{ansi_term.style.Style{ .foreground = .Red }} ++ args ++ .{Reset{}};
+
+        try printImpl(stderr, new_fmt, new_args);
+        try stderr.flush();
+    }
+};
+
+pub const StdoutWriter = struct {
+    pub fn print(comptime fmt: []const u8, args: anytype) !void {
+        var stdout_buffer: [buffer_length]u8 = undefined;
+        var stdout_writer = std.fs.File.stdout().writer(&stdout_buffer);
+        const stdout = &stdout_writer.interface;
+
+        const ArgsType = @TypeOf(args);
+        const args_type_info = @typeInfo(ArgsType);
+        if (args_type_info != .@"struct") {
+            @compileError("expected tuple or struct argument, found " ++ @typeName(ArgsType));
+        }
+
+        const new_fmt = "{any}" ++ fmt ++ "{any}";
+        const new_args = .{ansi_term.style.Style{ .foreground = .Green }} ++ args ++ .{Reset{}};
+
+        try printImpl(stdout, new_fmt, new_args);
+        try stdout.flush();
+    }
+};
