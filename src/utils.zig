@@ -6,9 +6,6 @@ pub const StrMap = std.StringHashMap;
 pub const BitSet = std.DynamicBitSet;
 pub const Str = []const u8;
 
-var gpa_impl = std.heap.GeneralPurposeAllocator(.{}){};
-pub const gpa = gpa_impl.allocator();
-
 // Add utility functions here
 
 // Useful stdlib functions
@@ -38,13 +35,13 @@ pub const sort = std.sort.block;
 pub const asc = std.sort.asc;
 pub const desc = std.sort.desc;
 
-pub const Solution = union(enum) { u64: u6, string: Str };
+pub const Solution = union(enum) { u64: u64, string: Str };
 
-pub const SolveErrors = error{ PredicateNotMet, OtherError };
+pub const SolveErrors = error{ PredicateNotMet, ParseError, OtherError };
 
 pub const SolveResult = SolveErrors!Solution;
 
-const SolveFn = fn (input: Str) SolveResult;
+const SolveFn = fn (allocator: Allocator, input: Str) SolveResult;
 
 const IndividualSolver = struct {
     first: SolveFn,
@@ -53,21 +50,96 @@ const IndividualSolver = struct {
 
 pub const Solver = union(enum) { both: SolveFn, individual: IndividualSolver };
 
-pub const Example = union(enum) { todo, solution: Solution };
+pub const Example = struct {
+    solution: Solution,
+    file: ?Str = null,
+};
 
-pub const Examples = struct { first: Example, second: Example };
+pub const ExampleWrapper = union(enum) { todo, implemented: Example };
+
+pub const Examples = struct { first: ExampleWrapper, second: ExampleWrapper };
+
+const WhichStep = enum(u1) { first = 0, second = 1 };
 
 pub const Day = struct {
     solver: Solver,
     examples: Examples,
+    root: Str,
 
-    pub fn run(self: *const Day) !void {
+    fn solve(self: *const Day, allocator: Allocator, input: Str, which: WhichStep) !Solution {
+        const fn_for_solving = switch (self.solver) {
+            .both => |f| f,
+            .individual => |individual| {
+                return switch (which) {
+                    .first => individual.first,
+                    .second => individual.second,
+                };
+            },
+        };
+
+        return fn_for_solving(allocator, input);
+    }
+
+    fn getExample(example: ExampleWrapper) ?Example {
+        switch (example) {
+            .todo => return null,
+            .implemented => |i| {
+                return i;
+            },
+        }
+    }
+
+    fn readFileAbs(allocator: Allocator, path: []const u8) ![]u8 {
+        var opened_file = try std.fs.openFileAbsolute(path, .{ .mode = .read_only });
+        defer opened_file.close();
+
+        var buf: [4096]u8 = undefined;
+
+        var file_reader = opened_file.reader(&buf);
+        const reader = &file_reader.interface;
+
+        return try reader.allocRemaining(allocator, .unlimited);
+    }
+
+    fn getExampleFile(self: *const Day, allocator: Allocator, example: Example, which: WhichStep) !Str {
+        const file_name: Str = if (example.file) |f| f else (if (which == .first) "example_01.txt" else "example_02.txt");
+
+        const file = if (std.fs.path.isAbsolute(file_name)) file_name else try std.fs.path.join(allocator, &[_]Str{ self.root, file_name });
+
+        std.debug.assert(std.fs.path.isAbsolute(file));
+
+        return readFileAbs(allocator, file);
+    }
+
+    pub fn run(self: *const Day, allocator: Allocator) !void {
         _ = self;
+        _ = allocator;
         unreachable;
     }
 
-    pub fn @"test"(self: *const Day) !void {
-        _ = self;
-        unreachable;
+    pub fn @"test"(self: *const Day, allocator: Allocator) !void {
+        {
+            const example_1 = Day.getExample(self.examples.first);
+
+            if (example_1) |ex1| {
+                const input = try Day.getExampleFile(allocator, ex1, .first);
+
+                const solution_1 = try self.solve(allocator, input, .first);
+
+                try std.testing.expectEqual(solution_1, ex1.solution);
+            }
+        }
+
+        {
+            const example_2 = Day.getExample(self.examples.second);
+
+            if (example_2) |ex2| {
+                const input = try Day.getExampleFile(allocator, ex2, .second);
+
+                const solution_2 = try self.solve(allocator, input, .second);
+
+                try std.testing.expectEqual(solution_2, ex2.solution);
+            }
+        }
     }
 };

@@ -6,24 +6,44 @@ const required_zig_version = std.SemanticVersion.parse("0.15.2") catch unreachab
 /// set this to true to link libc
 const should_link_libc = false;
 
-fn linkObject(b: *std.Build, obj: *CompileStep) void {
-    if (should_link_libc) obj.linkLibC();
+const ModuleKV = struct { name: []const u8, module: *std.Build.Module };
+
+fn linkObject(b: *std.Build, obj: *CompileStep, modules: []ModuleKV) void {
+    if (should_link_libc) obj.root_module.linkLibC();
 
     // Add linking for packages or third party libraries here
 
-    const utils_mod = b.createModule(.{
-        .root_source_file = b.path("src/utils.zig"),
-    });
+    for (modules) |module| {
+        obj.root_module.addImport(module.name, module.module);
+    }
 
-    obj.root_module.addImport("utils", utils_mod);
+    _ = b;
+}
+
+fn getFileRoot(alloc: std.mem.Allocator, file: []const u8) !([]const u8) {
+    const cwd = try std.fs.cwd().realpathAlloc(alloc, ".");
+
+    const abs_file = try std.fs.path.join(alloc, &[_][]const u8{ cwd, file });
+
+    const dirname = std.fs.path.dirname(abs_file);
+
+    if (dirname == null) {
+        return error.EmptyFilePath;
+    }
+
+    return dirname.?;
 }
 
 // taken and modified from: https://github.com/SpexGuy/Zig-AoC-Template/
-pub fn build(b: *std.Build) void {
+pub fn build(b: *std.Build) !void {
     if (comptime @import("builtin").zig_version.order(required_zig_version) == .lt) {
         std.debug.print("Warning: Your version of Zig too old. You will need to download a newer build\n", .{});
         std.os.exit(1);
     }
+
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    defer _ = gpa.deinit();
+    const alloc = gpa.allocator();
 
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
@@ -31,11 +51,22 @@ pub fn build(b: *std.Build) void {
     const install_all = b.step("install_all", "Install all days");
     const run_all = b.step("run_all", "Run all days");
 
+    const utils_mod = b.createModule(.{
+        .root_source_file = b.path("src/utils.zig"),
+    });
+
+    const utils_mod_kv = ModuleKV{ .module = utils_mod, .name = "utils" };
+
     // Set up a compile target for each day
     var day: u32 = 1;
     while (day <= 25) : (day += 1) {
         const dayString = b.fmt("day{:0>2}", .{day});
         const zigFile = b.fmt("src/days/{s}/day.zig", .{dayString});
+
+        //TODO. use b.path()!
+        const zigFileRoot = try getFileRoot(alloc, zigFile);
+
+        const generated_module_kv = ModuleKV{ .module = zigFileRoot, .name = "generated" };
 
         const day_exe = b.addExecutable(.{
             .name = dayString,
@@ -46,7 +77,7 @@ pub fn build(b: *std.Build) void {
             }),
         });
 
-        linkObject(b, day_exe);
+        linkObject(b, day_exe, &[_][]std.Build.Module{ utils_mod_kv, generated_module_kv });
 
         const install_cmd = b.addInstallArtifact(day_exe, .{});
 
@@ -58,7 +89,7 @@ pub fn build(b: *std.Build) void {
             }),
         });
 
-        linkObject(b, build_test);
+        linkObject(b, build_test, &[_][]std.Build.Module{ utils_mod_kv, generated_module_kv });
 
         b.installArtifact(build_test);
 
@@ -110,7 +141,7 @@ pub fn build(b: *std.Build) void {
             }),
         });
 
-        linkObject(b, test_cmd);
+        linkObject(b, test_cmd, &[_][]std.Build.Module{utils_mod_kv});
 
         test_utils.dependOn(&test_cmd.step);
         b.installArtifact(test_cmd);
@@ -126,7 +157,7 @@ pub fn build(b: *std.Build) void {
         }),
     });
 
-    linkObject(b, all_tests);
+    linkObject(b, all_tests, &[_][]std.Build.Module{utils_mod_kv});
 
     const run_all_tests = b.addRunArtifact(all_tests);
     test_all.dependOn(&run_all_tests.step);
