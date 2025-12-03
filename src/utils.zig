@@ -81,6 +81,26 @@ pub const Examples = struct { first: ExampleWrapper, second: ExampleWrapper };
 
 const WhichPart = enum(u1) { first = 0, second = 1 };
 
+pub const StderrWriter = struct {
+    pub fn print(comptime fmt: []const u8, args: anytype) !void {
+        var stderr_buffer: [1024]u8 = undefined;
+        var stderr_writer = std.fs.File.stderr().writer(&stderr_buffer);
+        const stderr = &stderr_writer.interface;
+
+        const ArgsType = @TypeOf(args);
+        const args_type_info = @typeInfo(ArgsType);
+        if (args_type_info != .@"struct") {
+            @compileError("expected tuple or struct argument, found " ++ @typeName(ArgsType));
+        }
+
+        const new_fmt = "{any}" ++ fmt ++ "\n{any}";
+        const new_args = .{ansi_term.style.Style{ .foreground = .Red }} ++ args ++ .{tty.Reset{}};
+
+        try tty.print(stderr, new_fmt, new_args);
+        try stderr.flush();
+    }
+};
+
 pub const Day = struct {
     solver: Solver,
     examples: Examples,
@@ -149,17 +169,6 @@ pub const Day = struct {
         return result;
     }
 
-    fn printErrorString(comptime fmt: []const u8) !void {
-        var stderr_buffer: [1024]u8 = undefined;
-        var stderr_writer = std.fs.File.stderr().writer(&stderr_buffer);
-        const stderr = &stderr_writer.interface;
-
-        try tty.print(stderr, "{any}" ++ fmt ++ "\n{any}", .{ ansi_term.style.Style{ .foreground = .Red }, tty.Reset{} });
-        try stderr.flush();
-
-        try stderr.flush();
-    }
-
     fn printError(which: WhichPart, is_normal: bool, err: SolveErrors) !void {
         const part = if (which == .first) "1" else "2";
         const type_ = if (is_normal) "Part" else "Example";
@@ -223,7 +232,7 @@ pub const Day = struct {
 
                 try Day.printResult(.first, solution_1);
             } else {
-                try Day.printErrorString("No file for part 1 found\n");
+                try StderrWriter.print("No file for part 1 found\n", .{});
             }
         }
 
@@ -240,7 +249,7 @@ pub const Day = struct {
 
                 try Day.printResult(.second, solution_2);
             } else {
-                try Day.printErrorString("No file for part 2 found\n");
+                try StderrWriter.print("No file for part 2 found\n", .{});
             }
         }
     }
@@ -300,7 +309,7 @@ pub const Day = struct {
 
                         try std.testing.expectEqual(real_sol, solution_1);
                     } else {
-                        try Day.printErrorString("No file for part 1 found\n");
+                        try StderrWriter.print("No file for part 1 found\n", .{});
                         try std.testing.expect(false);
                     }
                 }
@@ -325,7 +334,7 @@ pub const Day = struct {
 
                         try std.testing.expectEqual(real_sol, solution_2);
                     } else {
-                        try Day.printErrorString("No file for part 2 found\n");
+                        try StderrWriter.print("No file for part 2 found\n", .{});
                         try std.testing.expect(false);
                     }
                 }

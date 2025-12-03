@@ -55,7 +55,9 @@ fn solveFirst(allocator: utils.Allocator, input: utils.Str) utils.SolveResult {
                 dial = modHelper(dial_i32 + (val.?.number), 100);
             },
             else => |c| {
-                std.debug.print("parse error: {c} was the start char", .{c});
+                utils.StderrWriter.print("parse error: {c} was the start char", .{c}) catch {
+                    return error.OtherError;
+                };
                 return error.ParseError;
             },
         }
@@ -128,7 +130,9 @@ fn solveSecond(allocator: utils.Allocator, input: utils.Str) utils.SolveResult {
                 dial = modHelper(dial_i32 + (val.?.number), 100);
             },
             else => |c| {
-                std.debug.print("parse error: {c} was the start char", .{c});
+                utils.StderrWriter.print("parse error: {c} was the start char", .{c}) catch {
+                    return error.OtherError;
+                };
                 return error.ParseError;
             },
         }
