@@ -72,7 +72,7 @@ pub const Solver = union(enum) { both: SolveFn, individual: IndividualSolver };
 pub const Example = struct {
     solution: Solution,
     file: ?Str = null,
-    real_value: ?Solution,
+    real_value: ?Solution = null,
 };
 
 pub const ExampleWrapper = union(enum) { todo, implemented: Example };
@@ -162,15 +162,14 @@ pub const Day = struct {
         return try reader.allocRemaining(allocator, .unlimited);
     }
 
-    fn getExampleFile(self: *const Day, allocator: Allocator, example: Example, which: WhichPart) !Str {
+    fn getExampleFileName(self: *const Day, allocator: Allocator, example: Example, which: WhichPart) !Str {
         const file_name: Str = if (example.file) |f| f else (if (which == .first) "example_01.txt" else "example_02.txt");
 
         const file = if (std.fs.path.isAbsolute(file_name)) try allocator.dupe(u8, file_name) else try std.fs.path.join(allocator, &[_]Str{ self.root, file_name });
-        defer allocator.free(file);
 
         std.debug.assert(std.fs.path.isAbsolute(file));
 
-        return readFileAbs(allocator, file);
+        return file;
     }
 
     fn getNormalFile(self: *const Day, allocator: Allocator, which: WhichPart) !?Str {
@@ -191,29 +190,29 @@ pub const Day = struct {
         return result;
     }
 
-    fn printError(which: WhichPart, is_normal: bool, err: SolveErrors) !void {
+    fn printErrorStr(which: WhichPart, is_normal: bool, comptime fmt: []const u8, args: anytype) !void {
         const part = if (which == .first) "1" else "2";
         const type_ = if (is_normal) "Part" else "Example";
 
+        try StderrWriter.print("{s} {s}: {any}" ++ fmt ++ "\n", .{ type_, part, ansi_term.style.Style{ .foreground = .Red, .font_style = .{ .bold = true } } } ++ args);
+    }
+
+    fn printError(which: WhichPart, is_normal: bool, err: SolveErrors) !void {
         switch (err) {
             error.PredicateNotMet => {
-                try StderrWriter.print("{s} {s}: {any}predicate not met\n", .{ type_, part, ansi_term.style.Style{ .foreground = .Red, .font_style = .{ .bold = true } } });
-
+                try printErrorStr(which, is_normal, "predicate not met", .{});
                 return;
             },
             error.ParseError => {
-                try StderrWriter.print("{s} {s}: {any}parse error\n", .{ type_, part, ansi_term.style.Style{ .foreground = .Red, .font_style = .{ .bold = true } } });
-
+                try printErrorStr(which, is_normal, "parse error", .{});
                 return;
             },
             error.NotSolved => {
-                try StderrWriter.print("{s} {s}: {any}not solved\n", .{ type_, part, ansi_term.style.Style{ .foreground = .Red, .font_style = .{ .bold = true } } });
-
+                try printErrorStr(which, is_normal, "not solved", .{});
                 return;
             },
             error.OtherError => {
-                try StderrWriter.print("{s} {s}: {any}other error\n", .{ type_, part, ansi_term.style.Style{ .foreground = .Red, .font_style = .{ .bold = true } } });
-
+                try printErrorStr(which, is_normal, "other error", .{});
                 return;
             },
         }
@@ -268,7 +267,17 @@ pub const Day = struct {
             const example_1 = Day.getExample(self.examples.first);
 
             if (example_1) |ex1| {
-                const input_1 = try self.getExampleFile(allocator, ex1, .first);
+                const file_1 = try self.getExampleFileName(allocator, ex1, .first);
+                defer allocator.free(file_1);
+
+                const input_1 = readFileAbs(allocator, file_1) catch |err| {
+                    if (err == error.FileNotFound) {
+                        try Day.printErrorStr(.first, false, "File not found: '{s}'", .{file_1});
+                        try std.testing.expect(false);
+                        return;
+                    }
+                    return err;
+                };
                 defer allocator.free(input_1);
 
                 const solution_1 = self.solve(allocator, input_1, .first) catch |err| {
@@ -286,7 +295,17 @@ pub const Day = struct {
 
             if (example_2) |ex2| {
                 const which_one: WhichPart = if (self.same_input) .first else .second;
-                const input_2 = try self.getExampleFile(allocator, ex2, which_one);
+                const file_2 = try self.getExampleFileName(allocator, ex2, which_one);
+                defer allocator.free(file_2);
+
+                const input_2 = readFileAbs(allocator, file_2) catch |err| {
+                    if (err == error.FileNotFound) {
+                        try Day.printErrorStr(.second, false, "File not found: '{s}'", .{file_2});
+                        try std.testing.expect(false);
+                        return;
+                    }
+                    return err;
+                };
                 defer allocator.free(input_2);
 
                 const solution_2 = self.solve(allocator, input_2, .second) catch |err| {
