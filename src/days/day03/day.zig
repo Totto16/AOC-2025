@@ -59,6 +59,20 @@ fn parseBatteries(allocator: utils.Allocator, input: utils.Str) utils.SolveError
     return Batteries{ .inner = inner };
 }
 
+pub fn max2DigitNumber(values: []const BatterieJolt) u64 {
+    var best_tens: u64 = 0;
+    var best: u64 = 0;
+
+    for (values) |d| {
+        const num = best_tens * 10 + d;
+        if (num > best) best = num;
+
+        if (d > best_tens) best_tens = d;
+    }
+
+    return best;
+}
+
 fn solveFirst(allocator: utils.Allocator, input: utils.Str) utils.SolveResult {
     var batteries = try parseBatteries(allocator, input);
     defer batteries.deinit();
@@ -68,18 +82,7 @@ fn solveFirst(allocator: utils.Allocator, input: utils.Str) utils.SolveResult {
     for (batteries.inner.items) |bank| {
         const jolts = bank.inner.items;
 
-        var max_jolt: u64 = 0;
-
-        // naive impl, improve
-        for (0..jolts.len) |i| {
-            for (i + 1..jolts.len) |j| {
-                const jolt_val = jolts[i] * 10 + jolts[j];
-
-                if (jolt_val > max_jolt) {
-                    max_jolt = jolt_val;
-                }
-            }
-        }
+        const max_jolt: u64 = max2DigitNumber(jolts);
 
         sum += max_jolt;
     }
@@ -99,7 +102,7 @@ const day = utils.Day{
     .examples = .{ .first = .{ .implemented = .{
         .solution = .{ .u64 = 357 },
         .real_value = .{ .u64 = 16927 },
-    } }, .second = .{ .implemented = .{ .solution = .{ .u64 = 0 }, .real_value = .{ .u64 = 1 } } } },
+    } }, .second = .todo },
     .root = @import("generated").root,
     .same_input = true,
 };
@@ -116,4 +119,31 @@ test "day 03" {
     defer _ = gpa.deinit();
 
     try day.@"test"(gpa.allocator());
+}
+
+fn testGetBatteries(allocator: utils.Allocator, val: utils.Str) ![]const BatterieJolt {
+    var res = try allocator.dupe(u8, val);
+
+    for (0..res.len) |i| {
+        const r: *u8 = &res[i];
+        std.debug.assert(r.* >= '0' and r.* <= '9');
+        r.* = r.* - '0';
+    }
+
+    return res;
+}
+
+test "day 03 - manual - 1 . part - faster solution" {
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    defer _ = gpa.deinit();
+
+    var arena = std.heap.ArenaAllocator.init(gpa.allocator());
+    defer arena.deinit();
+
+    const fast_alloc = arena.allocator();
+
+    try std.testing.expectEqual(98, max2DigitNumber(try testGetBatteries(fast_alloc, "987654321111111")));
+    try std.testing.expectEqual(89, max2DigitNumber(try testGetBatteries(fast_alloc, "811111111111119")));
+    try std.testing.expectEqual(78, max2DigitNumber(try testGetBatteries(fast_alloc, "234234234234278")));
+    try std.testing.expectEqual(92, max2DigitNumber(try testGetBatteries(fast_alloc, "818181911112111")));
 }
