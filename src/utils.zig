@@ -1,6 +1,7 @@
 const std = @import("std");
 pub const Allocator = std.mem.Allocator;
 pub const List = std.ArrayList;
+pub const ListManaged = std.array_list.AlignedManaged;
 pub const Map = std.AutoHashMap;
 pub const StrMap = std.StringHashMap;
 pub const BitSet = std.DynamicBitSet;
@@ -56,7 +57,7 @@ pub const Solution = union(enum) {
     }
 };
 
-pub const SolveErrors = error{ PredicateNotMet, ParseError, NotSolved, OtherError };
+pub const SolveErrors = error{ PredicateNotMet, ParseError, NotSolved, OutOfMemory, OtherError };
 
 pub const SolveResult = SolveErrors!Solution;
 
@@ -205,10 +206,14 @@ pub const Day = struct {
             },
             error.ParseError => {
                 try printErrorStr(which, is_normal, "parse error", .{});
-                return;
+                return err;
             },
             error.NotSolved => {
                 try printErrorStr(which, is_normal, "not solved", .{});
+                return;
+            },
+            error.OutOfMemory => {
+                try printErrorStr(which, is_normal, "OutOfMemory", .{});
                 return;
             },
             error.OtherError => {
