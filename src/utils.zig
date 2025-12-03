@@ -36,7 +36,24 @@ pub const sort = std.sort.block;
 pub const asc = std.sort.asc;
 pub const desc = std.sort.desc;
 
-pub const Solution = union(enum) { u64: u64, string: Str };
+pub const Solution = union(enum) {
+    u64: u64,
+    string: Str,
+
+    pub fn format(
+        self: Solution,
+        writer: anytype,
+    ) !void {
+        switch (self) {
+            .u64 => |num| {
+                try writer.print("number {d}", .{num});
+            },
+            .string => |str| {
+                try writer.print("string {s}", .{str});
+            },
+        }
+    }
+};
 
 pub const SolveErrors = error{ PredicateNotMet, ParseError, NotSolved, OtherError };
 
@@ -189,11 +206,17 @@ pub const Day = struct {
         unreachable;
     }
 
-    fn printResult(allocator: Allocator, which: WhichPart, solution: Solution) !void {
-        //TODO: impl
-        _ = allocator;
-        _ = which;
-        _ = solution;
+    fn printResult(which: WhichPart, solution: Solution) !void {
+        const part = if (which == .first) "1" else "2";
+
+        var stderr_buffer: [1024]u8 = undefined;
+        var stderr_writer = std.fs.File.stderr().writer(&stderr_buffer);
+        const stderr = &stderr_writer.interface;
+
+        try ansi_term.format.updateStyle(stderr, ansi_term.style.Style{ .foreground = .Green }, null);
+        try stderr.print("Solution for part {s} is: {f}\n", .{ part, solution });
+        try ansi_term.format.resetStyle(stderr);
+        try stderr.flush();
     }
 
     pub fn run(self: *const Day, allocator: Allocator) !void {
@@ -208,7 +231,7 @@ pub const Day = struct {
                     return;
                 };
 
-                try Day.printResult(allocator, .first, solution_1);
+                try Day.printResult(.first, solution_1);
             } else {
                 try Day.printErrorString("No file for part 1 found\n");
             }
