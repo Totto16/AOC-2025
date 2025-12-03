@@ -5,7 +5,16 @@ const assert = std.debug.assert;
 
 pub const Reset = struct {};
 
-const ColorType = union(enum) { reset, style: ansi_term.style.Style };
+pub const ForegroundColor = struct { color: ansi_term.style.Color };
+pub const BackgroundColor = struct { color: ansi_term.style.Color };
+
+const ColorType = union(enum) {
+    reset,
+    style: ansi_term.style.Style,
+    font_style: ansi_term.style.FontStyle,
+    foreground_color: ansi_term.style.Color,
+    background_color: ansi_term.style.Color,
+};
 
 fn get_color_type(value: anytype) ?ColorType {
     const T = @TypeOf(value);
@@ -16,6 +25,22 @@ fn get_color_type(value: anytype) ?ColorType {
 
     if (T == ansi_term.style.Style) {
         return .{ .style = value };
+    }
+
+    if (T == ansi_term.style.Color) {
+        return .{ .foreground_color = value };
+    }
+
+    if (T == ForegroundColor) {
+        return .{ .foreground_color = value.color };
+    }
+
+    if (T == BackgroundColor) {
+        return .{ .background_color = value.color };
+    }
+
+    if (T == ansi_term.style.FontStyle) {
+        return .{ .font_style = value };
     }
 
     return null;
@@ -139,6 +164,42 @@ pub fn printImpl(w: *std.Io.Writer, comptime fmt: []const u8, args: anytype) std
                     try ansi_term.format.resetStyle(w);
                 },
                 .style => |style_now| {
+                    try ansi_term.format.updateStyle(w, style_now, last_style);
+                    last_style = style_now;
+                },
+                .foreground_color => |color| {
+                    const style_now: ansi_term.style.Style = blk: {
+                        if (last_style) |styl| {
+                            break :blk ansi_term.style.Style{ .foreground = color, .background = styl.background, .font_style = styl.font_style };
+                        } else {
+                            break :blk ansi_term.style.Style{ .foreground = color };
+                        }
+                    };
+
+                    try ansi_term.format.updateStyle(w, style_now, last_style);
+                    last_style = style_now;
+                },
+                .background_color => |color| {
+                    const style_now: ansi_term.style.Style = blk: {
+                        if (last_style) |styl| {
+                            break :blk ansi_term.style.Style{ .foreground = styl.background, .background = color, .font_style = styl.font_style };
+                        } else {
+                            break :blk ansi_term.style.Style{ .background = color };
+                        }
+                    };
+
+                    try ansi_term.format.updateStyle(w, style_now, last_style);
+                    last_style = style_now;
+                },
+                .font_style => |font_styl| {
+                    const style_now: ansi_term.style.Style = blk: {
+                        if (last_style) |styl| {
+                            break :blk ansi_term.style.Style{ .foreground = styl.foreground, .background = styl.background, .font_style = font_styl };
+                        } else {
+                            break :blk ansi_term.style.Style{ .font_style = font_styl };
+                        }
+                    };
+
                     try ansi_term.format.updateStyle(w, style_now, last_style);
                     last_style = style_now;
                 },
