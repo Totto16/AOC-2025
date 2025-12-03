@@ -85,10 +85,18 @@ pub fn build(b: *std.Build) void {
             run_cmd.addArgs(args);
         }
 
+        const run_key = b.fmt("run_{s}", .{dayString});
         const run_desc = b.fmt("Run {s}", .{dayString});
-        const run_step = b.step(dayString, run_desc);
+        const run_step = b.step(run_key, run_desc);
         run_step.dependOn(&run_cmd.step);
+
         run_all.dependOn(&run_cmd.step);
+
+        const all_key = dayString;
+        const all_desc = b.fmt("Do all For {s}", .{dayString});
+        const all_step = b.step(all_key, all_desc);
+        all_step.dependOn(&run_cmd.step);
+        all_step.dependOn(&run_test.step);
     }
 
     // Set up tests for utils.zig

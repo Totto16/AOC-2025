@@ -63,9 +63,11 @@ pub const Day = struct {
 
     pub fn run(self: *const Day) !void {
         _ = self;
+        unreachable;
     }
 
     pub fn @"test"(self: *const Day) !void {
         _ = self;
+        unreachable;
     }
 };
