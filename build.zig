@@ -36,6 +36,25 @@ fn getFileRoot(alloc: std.mem.Allocator, file: []const u8) !([]const u8) {
     return alloc.dupe(u8, dirname.?);
 }
 
+fn fileIsPresent(alloc: std.mem.Allocator, file: []const u8) !bool {
+    const cwd = try std.fs.cwd().realpathAlloc(alloc, ".");
+    defer alloc.free(cwd);
+
+    const abs_file = try std.fs.path.join(alloc, &[_][]const u8{ cwd, file });
+    defer alloc.free(abs_file);
+
+    const opened_file = std.fs.openFileAbsolute(abs_file, .{ .mode = .read_only }) catch |err| {
+        if (err == error.FileNotFound) {
+            return false;
+        }
+        return err;
+    };
+
+    opened_file.close();
+
+    return true;
+}
+
 // taken and modified from: https://github.com/SpexGuy/Zig-AoC-Template/
 pub fn build(b: *std.Build) !void {
     if (comptime @import("builtin").zig_version.order(required_zig_version) == .lt) {
@@ -71,107 +90,109 @@ pub fn build(b: *std.Build) !void {
         const dayString = b.fmt("day{:0>2}", .{day});
         const zigFile = b.fmt("src/days/{s}/day.zig", .{dayString});
 
-        const zigFileRoot = try getFileRoot(alloc, zigFile);
+        if (try fileIsPresent(alloc, zigFile)) {
+            const zigFileRoot = try getFileRoot(alloc, zigFile);
 
-        const generatedName = b.fmt("day{:0>2}/generated.zig", .{day});
+            const generatedName = b.fmt("day{:0>2}/generated.zig", .{day});
 
-        const generate_file_src = try b.cache_root.join(alloc, &[_][]const u8{generatedName});
-        defer alloc.free(generate_file_src);
+            const generate_file_src = try b.cache_root.join(alloc, &[_][]const u8{generatedName});
+            defer alloc.free(generate_file_src);
 
-        const file_content = b.fmt("pub const root = \"{s}\";", .{zigFileRoot});
-        alloc.free(zigFileRoot);
+            const file_content = b.fmt("pub const root = \"{s}\";", .{zigFileRoot});
+            alloc.free(zigFileRoot);
 
-        {
-            const dirname = std.fs.path.dirname(generate_file_src);
+            {
+                const dirname = std.fs.path.dirname(generate_file_src);
 
-            if (dirname) |d| {
-                std.fs.cwd().makeDir(d) catch |err| blk: {
-                    if (err != error.PathAlreadyExists) {
+                if (dirname) |d| {
+                    std.fs.cwd().makeDir(d) catch |err| blk: {
+                        if (err != error.PathAlreadyExists) {
+                            return err;
+                        }
+                        break :blk;
+                    };
+                }
+
+                const opened_file = std.fs.cwd().createFile(generate_file_src, .{}) catch |err| blk: {
+                    if (err != error.FileAlreadyExists) {
                         return err;
                     }
-                    break :blk;
+                    break :blk null;
                 };
-            }
 
-            const opened_file = std.fs.cwd().createFile(generate_file_src, .{}) catch |err| blk: {
-                if (err != error.FileAlreadyExists) {
-                    return err;
+                if (opened_file) |f| {
+                    defer f.close();
+                    try f.writeAll(file_content);
                 }
-                break :blk null;
-            };
-
-            if (opened_file) |f| {
-                defer f.close();
-                try f.writeAll(file_content);
             }
+
+            const generated_module = b.createModule(.{
+                .root_source_file = b.path(generate_file_src),
+            });
+
+            const generated_module_kv = ModuleKV{ .module = generated_module, .name = "generated" };
+
+            const day_exe = b.addExecutable(.{
+                .name = dayString,
+                .root_module = b.createModule(.{
+                    .root_source_file = b.path(zigFile),
+                    .target = target,
+                    .optimize = optimize,
+                }),
+            });
+
+            linkObject(b, day_exe, &[_]ModuleKV{ utils_mod_kv, ansi_term_mod_kv, generated_module_kv });
+
+            const install_cmd = b.addInstallArtifact(day_exe, .{});
+
+            const build_test = b.addTest(.{
+                .root_module = b.createModule(.{
+                    .root_source_file = b.path(zigFile),
+                    .target = target,
+                    .optimize = optimize,
+                }),
+            });
+
+            linkObject(b, build_test, &[_]ModuleKV{ utils_mod_kv, ansi_term_mod_kv, generated_module_kv });
+
+            b.installArtifact(build_test);
+
+            const run_test = b.addRunArtifact(build_test);
+
+            {
+                const step_key = b.fmt("install_{s}", .{dayString});
+                const step_desc = b.fmt("Install {s}.exe", .{dayString});
+                const install_step = b.step(step_key, step_desc);
+                install_step.dependOn(&install_cmd.step);
+                install_all.dependOn(&install_cmd.step);
+            }
+
+            {
+                const step_key = b.fmt("test_{s}", .{dayString});
+                const step_desc = b.fmt("Run tests in {s}", .{zigFile});
+                const step = b.step(step_key, step_desc);
+                step.dependOn(&run_test.step);
+            }
+
+            const run_cmd = b.addRunArtifact(day_exe);
+            b.installArtifact(day_exe);
+            if (b.args) |args| {
+                run_cmd.addArgs(args);
+            }
+
+            const run_key = b.fmt("run_{s}", .{dayString});
+            const run_desc = b.fmt("Run {s}", .{dayString});
+            const run_step = b.step(run_key, run_desc);
+            run_step.dependOn(&run_cmd.step);
+
+            run_all.dependOn(&run_cmd.step);
+
+            const all_key = dayString;
+            const all_desc = b.fmt("Do all For {s}", .{dayString});
+            const all_step = b.step(all_key, all_desc);
+            all_step.dependOn(&run_cmd.step);
+            all_step.dependOn(&run_test.step);
         }
-
-        const generated_module = b.createModule(.{
-            .root_source_file = b.path(generate_file_src),
-        });
-
-        const generated_module_kv = ModuleKV{ .module = generated_module, .name = "generated" };
-
-        const day_exe = b.addExecutable(.{
-            .name = dayString,
-            .root_module = b.createModule(.{
-                .root_source_file = b.path(zigFile),
-                .target = target,
-                .optimize = optimize,
-            }),
-        });
-
-        linkObject(b, day_exe, &[_]ModuleKV{ utils_mod_kv, ansi_term_mod_kv, generated_module_kv });
-
-        const install_cmd = b.addInstallArtifact(day_exe, .{});
-
-        const build_test = b.addTest(.{
-            .root_module = b.createModule(.{
-                .root_source_file = b.path(zigFile),
-                .target = target,
-                .optimize = optimize,
-            }),
-        });
-
-        linkObject(b, build_test, &[_]ModuleKV{ utils_mod_kv, ansi_term_mod_kv, generated_module_kv });
-
-        b.installArtifact(build_test);
-
-        const run_test = b.addRunArtifact(build_test);
-
-        {
-            const step_key = b.fmt("install_{s}", .{dayString});
-            const step_desc = b.fmt("Install {s}.exe", .{dayString});
-            const install_step = b.step(step_key, step_desc);
-            install_step.dependOn(&install_cmd.step);
-            install_all.dependOn(&install_cmd.step);
-        }
-
-        {
-            const step_key = b.fmt("test_{s}", .{dayString});
-            const step_desc = b.fmt("Run tests in {s}", .{zigFile});
-            const step = b.step(step_key, step_desc);
-            step.dependOn(&run_test.step);
-        }
-
-        const run_cmd = b.addRunArtifact(day_exe);
-        b.installArtifact(day_exe);
-        if (b.args) |args| {
-            run_cmd.addArgs(args);
-        }
-
-        const run_key = b.fmt("run_{s}", .{dayString});
-        const run_desc = b.fmt("Run {s}", .{dayString});
-        const run_step = b.step(run_key, run_desc);
-        run_step.dependOn(&run_cmd.step);
-
-        run_all.dependOn(&run_cmd.step);
-
-        const all_key = dayString;
-        const all_desc = b.fmt("Do all For {s}", .{dayString});
-        const all_step = b.step(all_key, all_desc);
-        all_step.dependOn(&run_cmd.step);
-        all_step.dependOn(&run_test.step);
     }
 
     // Set up tests for utils.zig
@@ -190,20 +211,4 @@ pub fn build(b: *std.Build) !void {
         test_utils.dependOn(&test_cmd.step);
         b.installArtifact(test_cmd);
     }
-
-    // Set up all tests contained in test_all.zig
-    const test_all = b.step("test", "Run all tests");
-    const all_tests = b.addTest(.{
-        .root_module = b.createModule(.{
-            .root_source_file = b.path("src/test_all.zig"),
-            .target = target,
-            .optimize = optimize,
-        }),
-    });
-
-    linkObject(b, all_tests, &[_]ModuleKV{ utils_mod_kv, ansi_term_mod_kv });
-
-    const run_all_tests = b.addRunArtifact(all_tests);
-    test_all.dependOn(&run_all_tests.step);
-    b.installArtifact(all_tests);
 }
