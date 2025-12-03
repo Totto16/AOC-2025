@@ -81,9 +81,11 @@ pub const Examples = struct { first: ExampleWrapper, second: ExampleWrapper };
 
 const WhichPart = enum(u1) { first = 0, second = 1 };
 
+const buffer_length: comptime_int = 4096;
+
 pub const StderrWriter = struct {
     pub fn print(comptime fmt: []const u8, args: anytype) !void {
-        var stderr_buffer: [1024]u8 = undefined;
+        var stderr_buffer: [buffer_length]u8 = undefined;
         var stderr_writer = std.fs.File.stderr().writer(&stderr_buffer);
         const stderr = &stderr_writer.interface;
 
@@ -93,11 +95,31 @@ pub const StderrWriter = struct {
             @compileError("expected tuple or struct argument, found " ++ @typeName(ArgsType));
         }
 
-        const new_fmt = "{any}" ++ fmt ++ "\n{any}";
+        const new_fmt = "{any}" ++ fmt ++ "{any}";
         const new_args = .{ansi_term.style.Style{ .foreground = .Red }} ++ args ++ .{tty.Reset{}};
 
         try tty.print(stderr, new_fmt, new_args);
         try stderr.flush();
+    }
+};
+
+pub const StdoutWriter = struct {
+    pub fn print(comptime fmt: []const u8, args: anytype) !void {
+        var stdout_buffer: [buffer_length]u8 = undefined;
+        var stdout_writer = std.fs.File.stdout().writer(&stdout_buffer);
+        const stdout = &stdout_writer.interface;
+
+        const ArgsType = @TypeOf(args);
+        const args_type_info = @typeInfo(ArgsType);
+        if (args_type_info != .@"struct") {
+            @compileError("expected tuple or struct argument, found " ++ @typeName(ArgsType));
+        }
+
+        const new_fmt = "{any}" ++ fmt ++ "{any}";
+        const new_args = .{ansi_term.style.Style{ .foreground = .Green }} ++ args ++ .{tty.Reset{}};
+
+        try tty.print(stdout, new_fmt, new_args);
+        try stdout.flush();
     }
 };
 
@@ -173,32 +195,24 @@ pub const Day = struct {
         const part = if (which == .first) "1" else "2";
         const type_ = if (is_normal) "Part" else "Example";
 
-        var stderr_buffer: [1024]u8 = undefined;
-        var stderr_writer = std.fs.File.stderr().writer(&stderr_buffer);
-        const stderr = &stderr_writer.interface;
-
         switch (err) {
             error.PredicateNotMet => {
-                try tty.print(stderr, "{any}{s} {s}: {any}predicate not met{any}\n", .{ ansi_term.style.Style{ .foreground = .Red }, type_, part, ansi_term.style.Style{ .foreground = .Red, .font_style = .{ .bold = true } }, tty.Reset{} });
-                try stderr.flush();
+                try StderrWriter.print("{s} {s}: {any}predicate not met\n", .{ type_, part, ansi_term.style.Style{ .foreground = .Red, .font_style = .{ .bold = true } } });
 
                 return;
             },
             error.ParseError => {
-                try tty.print(stderr, "{any}{s} {s}: {any}parse error{any}\n", .{ ansi_term.style.Style{ .foreground = .Red }, type_, part, ansi_term.style.Style{ .foreground = .Red, .font_style = .{ .bold = true } }, tty.Reset{} });
-                try stderr.flush();
+                try StderrWriter.print("{s} {s}: {any}parse error\n", .{ type_, part, ansi_term.style.Style{ .foreground = .Red, .font_style = .{ .bold = true } } });
 
                 return;
             },
             error.NotSolved => {
-                try tty.print(stderr, "{any}{s} {s}: {any}not solved{any}\n", .{ ansi_term.style.Style{ .foreground = .Red }, type_, part, ansi_term.style.Style{ .foreground = .Red, .font_style = .{ .bold = true } }, tty.Reset{} });
-                try stderr.flush();
+                try StderrWriter.print("{s} {s}: {any}not solved\n", .{ type_, part, ansi_term.style.Style{ .foreground = .Red, .font_style = .{ .bold = true } } });
 
                 return;
             },
             error.OtherError => {
-                try tty.print(stderr, "{any}{s} {s}: {any}other error{any}\n", .{ ansi_term.style.Style{ .foreground = .Red }, type_, part, ansi_term.style.Style{ .foreground = .Red, .font_style = .{ .bold = true } }, tty.Reset{} });
-                try stderr.flush();
+                try StderrWriter.print("{s} {s}: {any}other error\n", .{ type_, part, ansi_term.style.Style{ .foreground = .Red, .font_style = .{ .bold = true } } });
 
                 return;
             },
@@ -210,12 +224,7 @@ pub const Day = struct {
     fn printResult(which: WhichPart, solution: Solution) !void {
         const part = if (which == .first) "1" else "2";
 
-        var stdout_buffer: [1024]u8 = undefined;
-        var stdout_writer = std.fs.File.stdout().writer(&stdout_buffer);
-        const stdout = &stdout_writer.interface;
-
-        try tty.print(stdout, "{any}Solution for part {any}{s}{any} is: {any}{f}{any}\n", .{ ansi_term.style.Style{ .foreground = .Green }, ansi_term.style.Style{ .foreground = .Cyan, .font_style = .{ .bold = true } }, part, ansi_term.style.Style{ .foreground = .Green }, ansi_term.style.Style{ .foreground = .Magenta, .font_style = .{ .bold = true } }, solution, tty.Reset{} });
-        try stdout.flush();
+        try StdoutWriter.print("Solution for part {any}{s}{any} is: {any}{f}\n", .{ ansi_term.style.Style{ .foreground = .Cyan, .font_style = .{ .bold = true } }, part, ansi_term.style.Style{ .foreground = .Green }, ansi_term.style.Style{ .foreground = .Magenta, .font_style = .{ .bold = true } }, solution });
     }
 
     pub fn run(self: *const Day, allocator: Allocator) !void {
