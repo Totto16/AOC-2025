@@ -2,7 +2,8 @@ const std = @import("std");
 const ansi_term = @import("ansi_term");
 
 const st = ansi_term.style;
-const st_fmt = ansi_term.format;
+const ansi_fmt = ansi_term.format;
+const ansi_clear = ansi_term.clear;
 
 pub const Style = ansi_term.style.Style;
 pub const Color = ansi_term.style.Color;
@@ -11,11 +12,25 @@ const assert = std.debug.assert;
 
 pub const Reset = struct {};
 
-pub const ForegroundColor = struct { color: st.Color };
-pub const BackgroundColor = struct { color: st.Color };
+pub const Clear = enum(u8) {
+    current_line,
+    cursor_to_line_begin,
+    cursor_to_line_end,
+    screen,
+    cursor_to_screen_begin,
+    cursor_to_screen_end,
+};
+
+pub const ForegroundColor = struct {
+    color: st.Color,
+};
+pub const BackgroundColor = struct {
+    color: st.Color,
+};
 
 const ColorType = union(enum) {
     reset,
+    clear: Clear,
     style: st.Style,
     font_style: st.FontStyle,
     foreground_color: st.Color,
@@ -27,6 +42,10 @@ fn get_color_type(value: anytype) ?ColorType {
 
     if (T == Reset) {
         return .reset;
+    }
+
+    if (T == Clear) {
+        return .{ .clear = value };
     }
 
     if (T == st.Style) {
@@ -167,10 +186,20 @@ pub fn printFunctionPrivate(w: *std.Io.Writer, comptime fmt: []const u8, args: a
         if (get_color_type(@field(args, fields_info[arg_to_print].name))) |color_type| {
             switch (color_type) {
                 .reset => {
-                    try st_fmt.resetStyle(w);
+                    try ansi_fmt.resetStyle(w);
+                },
+                .clear => |cl| {
+                    switch (cl) {
+                        .current_line => try ansi_clear.clearCurrentLine(w),
+                        .cursor_to_line_begin => try ansi_clear.clearFromCursorToLineBeginning(w),
+                        .cursor_to_line_end => try ansi_clear.clearFromCursorToLineEnd(w),
+                        .screen => try ansi_clear.clearScreen(w),
+                        .cursor_to_screen_begin => try ansi_clear.clearFromCursorToScreenBeginning(w),
+                        .cursor_to_screen_end => try ansi_clear.clearFromCursorToScreenEnd(w),
+                    }
                 },
                 .style => |style_now| {
-                    try st_fmt.updateStyle(w, style_now, last_style);
+                    try ansi_fmt.updateStyle(w, style_now, last_style);
                     last_style = style_now;
                 },
                 .foreground_color => |color| {
@@ -182,7 +211,7 @@ pub fn printFunctionPrivate(w: *std.Io.Writer, comptime fmt: []const u8, args: a
                         }
                     };
 
-                    try st_fmt.updateStyle(w, style_now, last_style);
+                    try ansi_fmt.updateStyle(w, style_now, last_style);
                     last_style = style_now;
                 },
                 .background_color => |color| {
@@ -194,7 +223,7 @@ pub fn printFunctionPrivate(w: *std.Io.Writer, comptime fmt: []const u8, args: a
                         }
                     };
 
-                    try st_fmt.updateStyle(w, style_now, last_style);
+                    try ansi_fmt.updateStyle(w, style_now, last_style);
                     last_style = style_now;
                 },
                 .font_style => |font_styl| {
@@ -206,7 +235,7 @@ pub fn printFunctionPrivate(w: *std.Io.Writer, comptime fmt: []const u8, args: a
                         }
                     };
 
-                    try st_fmt.updateStyle(w, style_now, last_style);
+                    try ansi_fmt.updateStyle(w, style_now, last_style);
                     last_style = style_now;
                 },
             }

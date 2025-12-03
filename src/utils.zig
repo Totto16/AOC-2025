@@ -87,9 +87,9 @@ const WhichPart = enum(u1) { first = 0, second = 1 };
 const day_fmt = "{any}[Day {any}{d}{any}]{any}";
 
 fn getDayFmtArgs(day: u32, style_after: tty.Style) struct { tty.Color, tty.Color, u32, tty.Color, tty.Style } {
-    const day_color: tty.Color = tty.Color.White;
+    const day_color: tty.Color = tty.Color.Yellow;
 
-    return .{ day_color, tty.Color.Blue, day, day_color, style_after };
+    return .{ day_color, tty.Color.Cyan, day, day_color, style_after };
 }
 
 pub const Day = struct {
