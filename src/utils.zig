@@ -6,7 +6,6 @@ pub const Map = std.AutoHashMap;
 pub const StrMap = std.StringHashMap;
 pub const BitSet = std.DynamicBitSet;
 pub const Str = []const u8;
-const ansi_term = @import("ansi_term");
 const tty = @import("tty");
 
 // Add utility functions here
@@ -87,10 +86,10 @@ const WhichPart = enum(u1) { first = 0, second = 1 };
 
 const day_fmt = "{any}[Day {any}{d}{any}]{any}";
 
-fn getDayFmtArgs(day: u32, style_after: ansi_term.style.Style) struct { ansi_term.style.Style, ansi_term.style.Style, u32, ansi_term.style.Style, ansi_term.style.Style } {
-    const day_color: ansi_term.style.Color = ansi_term.style.Color.White;
+fn getDayFmtArgs(day: u32, style_after: tty.Style) struct { tty.Color, tty.Color, u32, tty.Color, tty.Style } {
+    const day_color: tty.Color = tty.Color.White;
 
-    return .{ ansi_term.style.Style{ .foreground = day_color }, ansi_term.style.Style{ .foreground = .Blue }, day, ansi_term.style.Style{ .foreground = day_color }, style_after };
+    return .{ day_color, tty.Color.Blue, day, day_color, style_after };
 }
 
 pub const Day = struct {
@@ -165,7 +164,7 @@ pub const Day = struct {
         const part = if (which == .first) "1" else "2";
         const type_ = if (is_normal) "Part" else "Example";
 
-        try StderrWriter.print(day_fmt ++ " {s} {s}: {any}" ++ fmt ++ "\n", getDayFmtArgs(self.day, ansi_term.style.Style{ .foreground = .Red }) ++ .{ type_, part, ansi_term.style.Style{ .foreground = .Red, .font_style = .{ .bold = true } } } ++ args);
+        try StderrWriter.print(day_fmt ++ " {s} {s}: {any}" ++ fmt ++ "\n", getDayFmtArgs(self.day, tty.Style{ .foreground = .Red }) ++ .{ type_, part, tty.Style{ .foreground = .Red, .font_style = .{ .bold = true } } } ++ args);
     }
 
     fn printError(self: *const Day, which: WhichPart, is_normal: bool, err: SolveErrors) !void {
@@ -198,7 +197,7 @@ pub const Day = struct {
     fn printResult(self: *const Day, which: WhichPart, solution: Solution) !void {
         const part = if (which == .first) "1" else "2";
 
-        try StdoutWriter.print(day_fmt ++ " Solution for part {any}{s}{any} is: {any}{f}\n", getDayFmtArgs(self.day, ansi_term.style.Style{ .foreground = .Green }) ++ .{ ansi_term.style.Style{ .foreground = .Cyan, .font_style = .{ .bold = true } }, part, ansi_term.style.Style{ .foreground = .Green }, ansi_term.style.Style{ .foreground = .Magenta, .font_style = .{ .bold = true } }, solution });
+        try StdoutWriter.print(day_fmt ++ " Solution for part {any}{s}{any} is: {any}{f}\n", getDayFmtArgs(self.day, tty.Style{ .foreground = .Green }) ++ .{ tty.Style{ .foreground = .Cyan, .font_style = .{ .bold = true } }, part, tty.Style{ .foreground = .Green }, tty.Style{ .foreground = .Magenta, .font_style = .{ .bold = true } }, solution });
     }
 
     pub fn run(self: *const Day, allocator: Allocator) !void {
@@ -215,7 +214,7 @@ pub const Day = struct {
 
                 try self.printResult(.first, solution_1);
             } else {
-                try StderrWriter.print(day_fmt ++ " No file for part 1 found\n", getDayFmtArgs(self.day, ansi_term.style.Style{ .foreground = .Red }) ++ .{});
+                try StderrWriter.print(day_fmt ++ " No file for part 1 found\n", getDayFmtArgs(self.day, tty.Style{ .foreground = .Red }) ++ .{});
             }
         }
 
@@ -232,7 +231,7 @@ pub const Day = struct {
 
                 try self.printResult(.second, solution_2);
             } else {
-                try StderrWriter.print(day_fmt ++ " No file for part 2 found\n", getDayFmtArgs(self.day, ansi_term.style.Style{ .foreground = .Red }) ++ .{});
+                try StderrWriter.print(day_fmt ++ " No file for part 2 found\n", getDayFmtArgs(self.day, tty.Style{ .foreground = .Red }) ++ .{});
             }
         }
     }
@@ -312,7 +311,7 @@ pub const Day = struct {
 
                         try std.testing.expectEqual(real_sol, solution_1);
                     } else {
-                        try StderrWriter.print(day_fmt ++ " No file for part 1 found\n", getDayFmtArgs(self.day, ansi_term.style.Style{ .foreground = .Red }) ++ .{});
+                        try StderrWriter.print(day_fmt ++ " No file for part 1 found\n", getDayFmtArgs(self.day, tty.Style{ .foreground = .Red }) ++ .{});
                         try std.testing.expect(false);
                     }
                 }
@@ -337,7 +336,7 @@ pub const Day = struct {
 
                         try std.testing.expectEqual(real_sol, solution_2);
                     } else {
-                        try StderrWriter.print(day_fmt ++ " No file for part 2 found\n", getDayFmtArgs(self.day, ansi_term.style.Style{ .foreground = .Red }) ++ .{});
+                        try StderrWriter.print(day_fmt ++ " No file for part 2 found\n", getDayFmtArgs(self.day, tty.Style{ .foreground = .Red }) ++ .{});
                         try std.testing.expect(false);
                     }
                 }

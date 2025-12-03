@@ -75,13 +75,11 @@ pub fn build(b: *std.Build) !void {
 
     const ansi_term_dep = b.dependency("ansi_term", .{ .target = target, .optimize = optimize });
 
-    const ansi_term_mod_kv = ModuleKV{ .module = ansi_term_dep.module("ansi_term"), .name = "ansi_term" };
-
     const tty_mod = b.createModule(.{
         .root_source_file = b.path("src/tty.zig"),
     });
 
-    tty_mod.addImport(ansi_term_mod_kv.name, ansi_term_mod_kv.module);
+    tty_mod.addImport("ansi_term", ansi_term_dep.module("ansi_term"));
 
     const tty_mod_kv = ModuleKV{ .module = tty_mod, .name = "tty" };
 
@@ -89,7 +87,6 @@ pub fn build(b: *std.Build) !void {
         .root_source_file = b.path("src/utils.zig"),
     });
 
-    utils_mod.addImport(ansi_term_mod_kv.name, ansi_term_mod_kv.module);
     utils_mod.addImport(tty_mod_kv.name, tty_mod_kv.module);
 
     const utils_mod_kv = ModuleKV{ .module = utils_mod, .name = "utils" };
@@ -153,7 +150,7 @@ pub fn build(b: *std.Build) !void {
                 }),
             });
 
-            linkObject(b, day_exe, &[_]ModuleKV{ utils_mod_kv, ansi_term_mod_kv, generated_module_kv });
+            linkObject(b, day_exe, &[_]ModuleKV{ utils_mod_kv, generated_module_kv });
 
             const install_cmd = b.addInstallArtifact(day_exe, .{});
 
@@ -163,7 +160,7 @@ pub fn build(b: *std.Build) !void {
                 .optimize = optimize,
             }), .test_runner = test_runner });
 
-            linkObject(b, build_test, &[_]ModuleKV{ utils_mod_kv, ansi_term_mod_kv, tty_mod_kv, generated_module_kv });
+            linkObject(b, build_test, &[_]ModuleKV{ utils_mod_kv, tty_mod_kv, generated_module_kv });
 
             b.installArtifact(build_test);
 
@@ -216,7 +213,7 @@ pub fn build(b: *std.Build) !void {
             .optimize = optimize,
         }), .test_runner = test_runner });
 
-        linkObject(b, test_cmd, &[_]ModuleKV{ utils_mod_kv, ansi_term_mod_kv, tty_mod_kv });
+        linkObject(b, test_cmd, &[_]ModuleKV{ utils_mod_kv, tty_mod_kv });
 
         test_utils.dependOn(&test_cmd.step);
         b.installArtifact(test_cmd);

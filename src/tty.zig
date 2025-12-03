@@ -1,19 +1,25 @@
 const std = @import("std");
 const ansi_term = @import("ansi_term");
 
+const st = ansi_term.style;
+const st_fmt = ansi_term.format;
+
+pub const Style = ansi_term.style.Style;
+pub const Color = ansi_term.style.Color;
+
 const assert = std.debug.assert;
 
 pub const Reset = struct {};
 
-pub const ForegroundColor = struct { color: ansi_term.style.Color };
-pub const BackgroundColor = struct { color: ansi_term.style.Color };
+pub const ForegroundColor = struct { color: st.Color };
+pub const BackgroundColor = struct { color: st.Color };
 
 const ColorType = union(enum) {
     reset,
-    style: ansi_term.style.Style,
-    font_style: ansi_term.style.FontStyle,
-    foreground_color: ansi_term.style.Color,
-    background_color: ansi_term.style.Color,
+    style: st.Style,
+    font_style: st.FontStyle,
+    foreground_color: st.Color,
+    background_color: st.Color,
 };
 
 fn get_color_type(value: anytype) ?ColorType {
@@ -23,11 +29,11 @@ fn get_color_type(value: anytype) ?ColorType {
         return .reset;
     }
 
-    if (T == ansi_term.style.Style) {
+    if (T == st.Style) {
         return .{ .style = value };
     }
 
-    if (T == ansi_term.style.Color) {
+    if (T == st.Color) {
         return .{ .foreground_color = value };
     }
 
@@ -39,7 +45,7 @@ fn get_color_type(value: anytype) ?ColorType {
         return .{ .background_color = value.color };
     }
 
-    if (T == ansi_term.style.FontStyle) {
+    if (T == st.FontStyle) {
         return .{ .font_style = value };
     }
 
@@ -64,7 +70,7 @@ pub fn printImpl(w: *std.Io.Writer, comptime fmt: []const u8, args: anytype) std
     @setEvalBranchQuota(fmt.len * 1000);
     comptime var arg_state: std.fmt.ArgState = .{ .args_len = fields_info.len };
 
-    var last_style: ?ansi_term.style.Style = null;
+    var last_style: ?st.Style = null;
 
     comptime var i = 0;
     comptime var literal: []const u8 = "";
@@ -161,46 +167,46 @@ pub fn printImpl(w: *std.Io.Writer, comptime fmt: []const u8, args: anytype) std
         if (get_color_type(@field(args, fields_info[arg_to_print].name))) |color_type| {
             switch (color_type) {
                 .reset => {
-                    try ansi_term.format.resetStyle(w);
+                    try st_fmt.resetStyle(w);
                 },
                 .style => |style_now| {
-                    try ansi_term.format.updateStyle(w, style_now, last_style);
+                    try st_fmt.updateStyle(w, style_now, last_style);
                     last_style = style_now;
                 },
                 .foreground_color => |color| {
-                    const style_now: ansi_term.style.Style = blk: {
+                    const style_now: st.Style = blk: {
                         if (last_style) |styl| {
-                            break :blk ansi_term.style.Style{ .foreground = color, .background = styl.background, .font_style = styl.font_style };
+                            break :blk st.Style{ .foreground = color, .background = styl.background, .font_style = styl.font_style };
                         } else {
-                            break :blk ansi_term.style.Style{ .foreground = color };
+                            break :blk st.Style{ .foreground = color };
                         }
                     };
 
-                    try ansi_term.format.updateStyle(w, style_now, last_style);
+                    try st_fmt.updateStyle(w, style_now, last_style);
                     last_style = style_now;
                 },
                 .background_color => |color| {
-                    const style_now: ansi_term.style.Style = blk: {
+                    const style_now: st.Style = blk: {
                         if (last_style) |styl| {
-                            break :blk ansi_term.style.Style{ .foreground = styl.background, .background = color, .font_style = styl.font_style };
+                            break :blk st.Style{ .foreground = styl.background, .background = color, .font_style = styl.font_style };
                         } else {
-                            break :blk ansi_term.style.Style{ .background = color };
+                            break :blk st.Style{ .background = color };
                         }
                     };
 
-                    try ansi_term.format.updateStyle(w, style_now, last_style);
+                    try st_fmt.updateStyle(w, style_now, last_style);
                     last_style = style_now;
                 },
                 .font_style => |font_styl| {
-                    const style_now: ansi_term.style.Style = blk: {
+                    const style_now: st.Style = blk: {
                         if (last_style) |styl| {
-                            break :blk ansi_term.style.Style{ .foreground = styl.foreground, .background = styl.background, .font_style = font_styl };
+                            break :blk st.Style{ .foreground = styl.foreground, .background = styl.background, .font_style = font_styl };
                         } else {
-                            break :blk ansi_term.style.Style{ .font_style = font_styl };
+                            break :blk st.Style{ .font_style = font_styl };
                         }
                     };
 
-                    try ansi_term.format.updateStyle(w, style_now, last_style);
+                    try st_fmt.updateStyle(w, style_now, last_style);
                     last_style = style_now;
                 },
             }
@@ -244,7 +250,7 @@ pub const StderrWriter = struct {
         }
 
         const new_fmt = "{any}" ++ fmt ++ "{any}";
-        const new_args = .{ansi_term.style.Style{ .foreground = .Red }} ++ args ++ .{Reset{}};
+        const new_args = .{st.Color.Red} ++ args ++ .{Reset{}};
 
         try printImpl(stderr, new_fmt, new_args);
         try stderr.flush();
@@ -264,7 +270,7 @@ pub const StdoutWriter = struct {
         }
 
         const new_fmt = "{any}" ++ fmt ++ "{any}";
-        const new_args = .{ansi_term.style.Style{ .foreground = .Green }} ++ args ++ .{Reset{}};
+        const new_args = .{st.Color.Green} ++ args ++ .{Reset{}};
 
         try printImpl(stdout, new_fmt, new_args);
         try stdout.flush();
