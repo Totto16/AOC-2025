@@ -101,22 +101,83 @@ fn solveFirst(allocator: utils.Allocator, input: utils.Str) utils.SolveResult {
     return utils.Solution{ .u64 = sum };
 }
 
+fn isRepeated(str: []const u8, amount: u64) bool {
+    std.debug.assert(str.len % amount == 0);
+
+    const end_idx = (str.len / amount) - 1;
+
+    if (end_idx == 0) {
+        return false;
+    }
+
+    for (0..end_idx) |i| {
+        const start = i * amount;
+        const mid = (i + 1) * amount;
+        const end = (i + 2) * amount;
+
+        const first_part = str[start..mid];
+        const second_part = str[mid..end];
+
+        if (!std.mem.eql(u8, first_part, second_part)) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+fn isInvalidIdSecond(allocator: utils.Allocator, id: u64) utils.SolveErrors!bool {
+    const str = try std.fmt.allocPrint(allocator, "{d}", .{id});
+
+    if (str.len == 1) {
+        return false;
+    }
+
+    const end_num = (str.len / 2) + 1;
+
+    for (1..end_num + 1) |repeated_count| {
+        if (str.len % repeated_count != 0) {
+            continue;
+        }
+
+        const is_repeated_res = isRepeated(str, repeated_count);
+
+        if (is_repeated_res) {
+            return true;
+        }
+    }
+    return false;
+}
+
 fn solveSecond(allocator: utils.Allocator, input: utils.Str) utils.SolveResult {
-    _ = allocator;
-    _ = input;
+    const values = try parseIds(allocator, input);
+    defer values.deinit();
 
-    //
+    var sum: u64 = 0;
 
-    return utils.Solution{ .string = "" };
+    var arena = std.heap.ArenaAllocator.init(allocator);
+    defer arena.deinit();
+
+    const fast_alloc = arena.allocator();
+
+    for (values.items) |range| {
+        for (range.first..range.last + 1) |id| {
+            if (try isInvalidIdSecond(fast_alloc, id)) {
+                sum += id;
+            }
+        }
+    }
+
+    return utils.Solution{ .u64 = sum };
 }
 
 const day = utils.Day{
     .solver = utils.Solver{ .individual = .{ .first = solveFirst, .second = solveSecond } },
     .examples = .{ .first = .{ .implemented = .{
         .solution = .{ .u64 = 1227775554 },
-    } }, .second = .todo },
+    } }, .second = .{ .implemented = .{ .solution = .{ .u64 = 4174379265 } } } },
     .root = @import("generated").root,
-    .same_input = false,
+    .same_input = true,
 };
 
 pub fn main() !void {
@@ -131,4 +192,21 @@ test "day 02" {
     defer _ = gpa.deinit();
 
     try day.@"test"(gpa.allocator());
+}
+
+test "day 02 - manual - 2. part" {
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    defer _ = gpa.deinit();
+
+    var arena = std.heap.ArenaAllocator.init(gpa.allocator());
+    defer arena.deinit();
+
+    const fast_alloc = arena.allocator();
+
+    try std.testing.expectEqual(true, try isInvalidIdSecond(fast_alloc, 11));
+    try std.testing.expectEqual(false, try isInvalidIdSecond(fast_alloc, 12));
+    try std.testing.expectEqual(false, try isInvalidIdSecond(fast_alloc, 102));
+    try std.testing.expectEqual(true, try isInvalidIdSecond(fast_alloc, 1188511885));
+    try std.testing.expectEqual(false, try isInvalidIdSecond(fast_alloc, 1698523));
+    try std.testing.expectEqual(true, try isInvalidIdSecond(fast_alloc, 38593859));
 }
