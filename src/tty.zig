@@ -52,9 +52,9 @@ fn get_color_type(value: anytype) ?ColorType {
     return null;
 }
 
-pub const print = printImpl;
+pub const print = printFunctionPrivate;
 
-pub fn printImpl(w: *std.Io.Writer, comptime fmt: []const u8, args: anytype) std.Io.Writer.Error!void {
+pub fn printFunctionPrivate(w: *std.Io.Writer, comptime fmt: []const u8, args: anytype) std.Io.Writer.Error!void {
     const ArgsType = @TypeOf(args);
     const args_type_info = @typeInfo(ArgsType);
     if (args_type_info != .@"struct") {
@@ -237,42 +237,78 @@ pub fn printImpl(w: *std.Io.Writer, comptime fmt: []const u8, args: anytype) std
 
 const buffer_length: comptime_int = 4096;
 
+const TTYWriter = struct {
+    buffer: [buffer_length]u8 = undefined,
+    writer: std.Io.Writer,
+
+    pub fn createFromFile(file: std.fs.File) TTYWriter {
+        const result = TTYWriter{ .buffer = undefined, .stderr_writer = undefined };
+
+        result.writer = file.writer(&result.buffer);
+
+        return result;
+    }
+
+    fn printTo(writer: *std.Io.Writer, color: st.Color, comptime fmt: []const u8, args: anytype) !void {
+        const ArgsType = @TypeOf(args);
+        const args_type_info = @typeInfo(ArgsType);
+        if (args_type_info != .@"struct") {
+            @compileError("expected tuple or struct argument, found " ++ @typeName(ArgsType));
+        }
+
+        const new_fmt = "{any}" ++ fmt ++ "{any}";
+        const new_args = .{color} ++ args ++ .{Reset{}};
+
+        try printFunctionPrivate(writer, new_fmt, new_args);
+        try writer.flush();
+    }
+
+    pub fn print(self: *StderrWriter, color: st.Color, comptime fmt: []const u8, args: anytype) !void {
+        const io_writer = &self.writer.interface;
+        self.printTo(io_writer, color, fmt, args);
+    }
+};
+
 pub const StderrWriter = struct {
-    pub fn print(comptime fmt: []const u8, args: anytype) !void {
+    writer: TTYWriter,
+
+    pub fn create() StderrWriter {
+        const writer = TTYWriter.createFromFile(std.fs.File.stderr());
+
+        return .{ .writer = writer };
+    }
+
+    pub fn printOnce(comptime fmt: []const u8, args: anytype) !void {
         var stderr_buffer: [buffer_length]u8 = undefined;
         var stderr_writer = std.fs.File.stderr().writer(&stderr_buffer);
         const stderr = &stderr_writer.interface;
 
-        const ArgsType = @TypeOf(args);
-        const args_type_info = @typeInfo(ArgsType);
-        if (args_type_info != .@"struct") {
-            @compileError("expected tuple or struct argument, found " ++ @typeName(ArgsType));
-        }
+        try TTYWriter.printTo(stderr, st.Color.Red, fmt, args);
+    }
 
-        const new_fmt = "{any}" ++ fmt ++ "{any}";
-        const new_args = .{st.Color.Red} ++ args ++ .{Reset{}};
-
-        try printImpl(stderr, new_fmt, new_args);
-        try stderr.flush();
+    pub fn print(self: *StderrWriter, comptime fmt: []const u8, args: anytype) !void {
+        return self.writer.print(st.Color.Red, fmt, args);
     }
 };
 
 pub const StdoutWriter = struct {
-    pub fn print(comptime fmt: []const u8, args: anytype) !void {
+    writer: TTYWriter,
+
+    pub fn create() StdoutWriter {
+        const writer = TTYWriter.createFromFile(std.fs.File.stdout());
+
+        return .{ .writer = writer };
+    }
+
+    pub fn printOnce(comptime fmt: []const u8, args: anytype) !void {
         var stdout_buffer: [buffer_length]u8 = undefined;
         var stdout_writer = std.fs.File.stdout().writer(&stdout_buffer);
         const stdout = &stdout_writer.interface;
 
-        const ArgsType = @TypeOf(args);
-        const args_type_info = @typeInfo(ArgsType);
-        if (args_type_info != .@"struct") {
-            @compileError("expected tuple or struct argument, found " ++ @typeName(ArgsType));
-        }
+        try TTYWriter.printTo(stdout, st.Color.Green, fmt, args);
+    }
 
-        const new_fmt = "{any}" ++ fmt ++ "{any}";
-        const new_args = .{st.Color.Green} ++ args ++ .{Reset{}};
-
-        try printImpl(stdout, new_fmt, new_args);
-        try stdout.flush();
+    pub fn print(self: *StderrWriter, comptime fmt: []const u8, args: anytype) !void {
+        return self.writer.print(st.Color.Green, fmt, args);
     }
 };
