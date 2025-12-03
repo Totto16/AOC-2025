@@ -175,7 +175,8 @@ const day = utils.Day{
     .solver = utils.Solver{ .individual = .{ .first = solveFirst, .second = solveSecond } },
     .examples = .{ .first = .{ .implemented = .{
         .solution = .{ .u64 = 1227775554 },
-    } }, .second = .{ .implemented = .{ .solution = .{ .u64 = 4174379265 } } } },
+        .real_value = .{ .u64 = 28846518423 },
+    } }, .second = .{ .implemented = .{ .solution = .{ .u64 = 4174379265 }, .real_value = .{ .u64 = 31578210022 } } } },
     .root = @import("generated").root,
     .same_input = true,
 };
