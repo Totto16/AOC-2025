@@ -8,7 +8,7 @@ const should_link_libc = false;
 
 const ModuleKV = struct { name: []const u8, module: *std.Build.Module };
 
-fn linkObject(b: *std.Build, obj: *CompileStep, modules: []ModuleKV) void {
+fn linkObject(b: *std.Build, obj: *CompileStep, modules: []const ModuleKV) void {
     if (should_link_libc) obj.root_module.linkLibC();
 
     // Add linking for packages or third party libraries here
@@ -22,8 +22,10 @@ fn linkObject(b: *std.Build, obj: *CompileStep, modules: []ModuleKV) void {
 
 fn getFileRoot(alloc: std.mem.Allocator, file: []const u8) !([]const u8) {
     const cwd = try std.fs.cwd().realpathAlloc(alloc, ".");
+    defer alloc.free(cwd);
 
     const abs_file = try std.fs.path.join(alloc, &[_][]const u8{ cwd, file });
+    defer alloc.free(abs_file);
 
     const dirname = std.fs.path.dirname(abs_file);
 
@@ -31,7 +33,7 @@ fn getFileRoot(alloc: std.mem.Allocator, file: []const u8) !([]const u8) {
         return error.EmptyFilePath;
     }
 
-    return dirname.?;
+    return alloc.dupe(u8, dirname.?);
 }
 
 // taken and modified from: https://github.com/SpexGuy/Zig-AoC-Template/
@@ -63,10 +65,46 @@ pub fn build(b: *std.Build) !void {
         const dayString = b.fmt("day{:0>2}", .{day});
         const zigFile = b.fmt("src/days/{s}/day.zig", .{dayString});
 
-        //TODO. use b.path()!
         const zigFileRoot = try getFileRoot(alloc, zigFile);
 
-        const generated_module_kv = ModuleKV{ .module = zigFileRoot, .name = "generated" };
+        const generatedName = b.fmt("day{:0>2}/generated.zig", .{day});
+
+        const generate_file_src = try b.cache_root.join(alloc, &[_][]const u8{generatedName});
+        defer alloc.free(generate_file_src);
+
+        const file_content = b.fmt("pub const root = \"{s}\";", .{zigFileRoot});
+        alloc.free(zigFileRoot);
+
+        {
+            const dirname = std.fs.path.dirname(generate_file_src);
+
+            if (dirname) |d| {
+                std.fs.cwd().makeDir(d) catch |err| blk: {
+                    if (err != error.PathAlreadyExists) {
+                        return err;
+                    }
+                    break :blk;
+                };
+            }
+
+            const opened_file = std.fs.cwd().createFile(generate_file_src, .{}) catch |err| blk: {
+                if (err != error.FileAlreadyExists) {
+                    return err;
+                }
+                break :blk null;
+            };
+
+            if (opened_file) |f| {
+                defer f.close();
+                try f.writeAll(file_content);
+            }
+        }
+
+        const generated_module = b.createModule(.{
+            .root_source_file = b.path(generate_file_src),
+        });
+
+        const generated_module_kv = ModuleKV{ .module = generated_module, .name = "generated" };
 
         const day_exe = b.addExecutable(.{
             .name = dayString,
@@ -77,7 +115,7 @@ pub fn build(b: *std.Build) !void {
             }),
         });
 
-        linkObject(b, day_exe, &[_][]std.Build.Module{ utils_mod_kv, generated_module_kv });
+        linkObject(b, day_exe, &[_]ModuleKV{ utils_mod_kv, generated_module_kv });
 
         const install_cmd = b.addInstallArtifact(day_exe, .{});
 
@@ -89,7 +127,7 @@ pub fn build(b: *std.Build) !void {
             }),
         });
 
-        linkObject(b, build_test, &[_][]std.Build.Module{ utils_mod_kv, generated_module_kv });
+        linkObject(b, build_test, &[_]ModuleKV{ utils_mod_kv, generated_module_kv });
 
         b.installArtifact(build_test);
 
@@ -141,7 +179,7 @@ pub fn build(b: *std.Build) !void {
             }),
         });
 
-        linkObject(b, test_cmd, &[_][]std.Build.Module{utils_mod_kv});
+        linkObject(b, test_cmd, &[_]ModuleKV{utils_mod_kv});
 
         test_utils.dependOn(&test_cmd.step);
         b.installArtifact(test_cmd);
@@ -157,7 +195,7 @@ pub fn build(b: *std.Build) !void {
         }),
     });
 
-    linkObject(b, all_tests, &[_][]std.Build.Module{utils_mod_kv});
+    linkObject(b, all_tests, &[_]ModuleKV{utils_mod_kv});
 
     const run_all_tests = b.addRunArtifact(all_tests);
     test_all.dependOn(&run_all_tests.step);

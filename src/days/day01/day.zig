@@ -14,13 +14,12 @@ pub fn main() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     defer _ = gpa.deinit();
 
-    day.root = std.fs.path.dirname(@src());
-    try day.run(@src(), gpa.allocator());
+    try day.run(gpa.allocator());
 }
 
 test "day 01" {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     defer _ = gpa.deinit();
 
-    try day.@"test"(@src(), gpa.allocator());
+    try day.@"test"(gpa.allocator());
 }

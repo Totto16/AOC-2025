@@ -122,7 +122,7 @@ pub const Day = struct {
             const example_1 = Day.getExample(self.examples.first);
 
             if (example_1) |ex1| {
-                const input = try Day.getExampleFile(allocator, ex1, .first);
+                const input = try self.getExampleFile(allocator, ex1, .first);
 
                 const solution_1 = try self.solve(allocator, input, .first);
 
@@ -134,7 +134,7 @@ pub const Day = struct {
             const example_2 = Day.getExample(self.examples.second);
 
             if (example_2) |ex2| {
-                const input = try Day.getExampleFile(allocator, ex2, .second);
+                const input = try self.getExampleFile(allocator, ex2, .second);
 
                 const solution_2 = try self.solve(allocator, input, .second);
 
