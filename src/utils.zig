@@ -40,7 +40,11 @@ pub const desc = std.sort.desc;
 
 pub const Solution = union(enum) { u64: u6, string: Str };
 
-const SolveFn = fn (input: Str) Solution;
+pub const SolveErrors = error{ PredicateNotMet, OtherError };
+
+pub const SolveResult = SolveErrors!Solution;
+
+const SolveFn = fn (input: Str) SolveResult;
 
 const IndividualSolver = struct {
     first: SolveFn,
@@ -57,7 +61,11 @@ pub const Day = struct {
     solver: Solver,
     examples: Examples,
 
-    fn run() !void {}
+    pub fn run(self: *const Day) !void {
+        _ = self;
+    }
 
-    fn @"test"() !void {}
+    pub fn @"test"(self: *const Day) !void {
+        _ = self;
+    }
 };

@@ -57,7 +57,10 @@ pub fn build(b: *std.Build) void {
                 .optimize = optimize,
             }),
         });
+
         linkObject(b, build_test);
+
+        b.installArtifact(build_test);
 
         const run_test = b.addRunArtifact(build_test);
 
@@ -77,6 +80,7 @@ pub fn build(b: *std.Build) void {
         }
 
         const run_cmd = b.addRunArtifact(day_exe);
+        b.installArtifact(day_exe);
         if (b.args) |args| {
             run_cmd.addArgs(args);
         }
@@ -97,8 +101,11 @@ pub fn build(b: *std.Build) void {
                 .optimize = optimize,
             }),
         });
+
         linkObject(b, test_cmd);
+
         test_utils.dependOn(&test_cmd.step);
+        b.installArtifact(test_cmd);
     }
 
     // Set up all tests contained in test_all.zig
@@ -110,6 +117,10 @@ pub fn build(b: *std.Build) void {
             .optimize = optimize,
         }),
     });
+
+    linkObject(b, all_tests);
+
     const run_all_tests = b.addRunArtifact(all_tests);
     test_all.dependOn(&run_all_tests.step);
+    b.installArtifact(all_tests);
 }

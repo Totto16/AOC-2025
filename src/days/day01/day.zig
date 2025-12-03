@@ -7,17 +7,17 @@ const BitSet = std.DynamicBitSet;
 
 const utils = @import("utils");
 
-fn solve(input: utils.Str) !utils.Solution {
+fn solve(input: utils.Str) utils.SolveResult {
     _ = input;
     unreachable;
 }
 
-const day = utils.Day{ .solver = utils.Solver{ .both = solve }, .examples = .{ .first = .{ .u64 = 0 }, .second = .{.todo} } };
+const day = utils.Day{ .solver = utils.Solver{ .both = solve }, .examples = .{ .first = .{ .solution = .{ .u64 = 0 } }, .second = .todo } };
 
 pub fn main() !void {
-    day.run();
+    try day.run();
 }
 
 test "day 01" {
-    day.@"test"();
+    try day.@"test"();
 }
