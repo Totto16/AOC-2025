@@ -140,10 +140,13 @@ fn solveSecond(allocator: utils.Allocator, input: utils.Str) utils.SolveResult {
     return utils.Solution{ .u64 = sum };
 }
 
+const generated = @import("generated");
+
 const day = utils.Day{
     .solver = utils.Solver{ .individual = .{ .first = solveFirst, .second = solveSecond } },
     .examples = .{ .first = .{ .implemented = .{ .solution = .{ .u64 = 3 }, .real_value = .{ .u64 = 982 } } }, .second = .{ .implemented = .{ .solution = .{ .u64 = 6 }, .real_value = .{ .u64 = 6106 } } } },
-    .root = @import("generated").root,
+    .root = generated.root,
+    .day = generated.day,
     .same_input = true,
 };
 

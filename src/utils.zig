@@ -124,10 +124,19 @@ pub const StdoutWriter = struct {
     }
 };
 
+const day_fmt = "{any}[Day {any}{d}{any}]{any}";
+
+fn getDayFmtArgs(day: u32, style_after: ansi_term.style.Style) struct { ansi_term.style.Style, ansi_term.style.Style, u32, ansi_term.style.Style, ansi_term.style.Style } {
+    const day_color: ansi_term.style.Color = ansi_term.style.Color.White;
+
+    return .{ ansi_term.style.Style{ .foreground = day_color }, ansi_term.style.Style{ .foreground = .Blue }, day, ansi_term.style.Style{ .foreground = day_color }, style_after };
+}
+
 pub const Day = struct {
     solver: Solver,
     examples: Examples,
     root: Str,
+    day: u32,
     same_input: bool = false,
 
     fn solve(self: *const Day, allocator: Allocator, input: Str, which: WhichPart) !Solution {
@@ -191,33 +200,33 @@ pub const Day = struct {
         return result;
     }
 
-    fn printErrorStr(which: WhichPart, is_normal: bool, comptime fmt: []const u8, args: anytype) !void {
+    fn printErrorStr(self: *const Day, which: WhichPart, is_normal: bool, comptime fmt: []const u8, args: anytype) !void {
         const part = if (which == .first) "1" else "2";
         const type_ = if (is_normal) "Part" else "Example";
 
-        try StderrWriter.print("{s} {s}: {any}" ++ fmt ++ "\n", .{ type_, part, ansi_term.style.Style{ .foreground = .Red, .font_style = .{ .bold = true } } } ++ args);
+        try StderrWriter.print(day_fmt ++ " {s} {s}: {any}" ++ fmt ++ "\n", getDayFmtArgs(self.day, ansi_term.style.Style{ .foreground = .Red }) ++ .{ type_, part, ansi_term.style.Style{ .foreground = .Red, .font_style = .{ .bold = true } } } ++ args);
     }
 
-    fn printError(which: WhichPart, is_normal: bool, err: SolveErrors) !void {
+    fn printError(self: *const Day, which: WhichPart, is_normal: bool, err: SolveErrors) !void {
         switch (err) {
             error.PredicateNotMet => {
-                try printErrorStr(which, is_normal, "predicate not met", .{});
+                try self.printErrorStr(which, is_normal, "predicate not met", .{});
                 return;
             },
             error.ParseError => {
-                try printErrorStr(which, is_normal, "parse error", .{});
+                try self.printErrorStr(which, is_normal, "parse error", .{});
                 return err;
             },
             error.NotSolved => {
-                try printErrorStr(which, is_normal, "not solved", .{});
+                try self.printErrorStr(which, is_normal, "not solved", .{});
                 return;
             },
             error.OutOfMemory => {
-                try printErrorStr(which, is_normal, "OutOfMemory", .{});
+                try self.printErrorStr(which, is_normal, "OutOfMemory", .{});
                 return;
             },
             error.OtherError => {
-                try printErrorStr(which, is_normal, "other error", .{});
+                try self.printErrorStr(which, is_normal, "other error", .{});
                 return;
             },
         }
@@ -225,10 +234,10 @@ pub const Day = struct {
         unreachable;
     }
 
-    fn printResult(which: WhichPart, solution: Solution) !void {
+    fn printResult(self: *const Day, which: WhichPart, solution: Solution) !void {
         const part = if (which == .first) "1" else "2";
 
-        try StdoutWriter.print("Solution for part {any}{s}{any} is: {any}{f}\n", .{ ansi_term.style.Style{ .foreground = .Cyan, .font_style = .{ .bold = true } }, part, ansi_term.style.Style{ .foreground = .Green }, ansi_term.style.Style{ .foreground = .Magenta, .font_style = .{ .bold = true } }, solution });
+        try StdoutWriter.print(day_fmt ++ " Solution for part {any}{s}{any} is: {any}{f}\n", getDayFmtArgs(self.day, ansi_term.style.Style{ .foreground = .Green }) ++ .{ ansi_term.style.Style{ .foreground = .Cyan, .font_style = .{ .bold = true } }, part, ansi_term.style.Style{ .foreground = .Green }, ansi_term.style.Style{ .foreground = .Magenta, .font_style = .{ .bold = true } }, solution });
     }
 
     pub fn run(self: *const Day, allocator: Allocator) !void {
@@ -239,13 +248,13 @@ pub const Day = struct {
             if (file_1) |input_1| {
                 defer allocator.free(input_1);
                 const solution_1 = self.solve(allocator, input_1, .first) catch |err| {
-                    try Day.printError(.first, true, err);
+                    try self.printError(.first, true, err);
                     return;
                 };
 
-                try Day.printResult(.first, solution_1);
+                try self.printResult(.first, solution_1);
             } else {
-                try StderrWriter.print("No file for part 1 found\n", .{});
+                try StderrWriter.print(day_fmt ++ " No file for part 1 found\n", getDayFmtArgs(self.day, ansi_term.style.Style{ .foreground = .Red }) ++ .{});
             }
         }
 
@@ -256,13 +265,13 @@ pub const Day = struct {
             if (file_2) |input_2| {
                 defer allocator.free(input_2);
                 const solution_2 = self.solve(allocator, input_2, .second) catch |err| {
-                    try Day.printError(.second, true, err);
+                    try self.printError(.second, true, err);
                     return;
                 };
 
-                try Day.printResult(.second, solution_2);
+                try self.printResult(.second, solution_2);
             } else {
-                try StderrWriter.print("No file for part 2 found\n", .{});
+                try StderrWriter.print(day_fmt ++ " No file for part 2 found\n", getDayFmtArgs(self.day, ansi_term.style.Style{ .foreground = .Red }) ++ .{});
             }
         }
     }
@@ -342,7 +351,7 @@ pub const Day = struct {
 
                         try std.testing.expectEqual(real_sol, solution_1);
                     } else {
-                        try StderrWriter.print("No file for part 1 found\n", .{});
+                        try StderrWriter.print(day_fmt ++ " No file for part 1 found\n", getDayFmtArgs(self.day, ansi_term.style.Style{ .foreground = .Red }) ++ .{});
                         try std.testing.expect(false);
                     }
                 }
@@ -367,7 +376,7 @@ pub const Day = struct {
 
                         try std.testing.expectEqual(real_sol, solution_2);
                     } else {
-                        try StderrWriter.print("No file for part 2 found\n", .{});
+                        try StderrWriter.print(day_fmt ++ " No file for part 2 found\n", getDayFmtArgs(self.day, ansi_term.style.Style{ .foreground = .Red }) ++ .{});
                         try std.testing.expect(false);
                     }
                 }
