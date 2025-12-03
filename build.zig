@@ -8,9 +8,14 @@ const should_link_libc = false;
 
 fn linkObject(b: *std.Build, obj: *CompileStep) void {
     if (should_link_libc) obj.linkLibC();
-    _ = b;
 
     // Add linking for packages or third party libraries here
+
+    const utils_mod = b.createModule(.{
+        .root_source_file = b.path("src/utils.zig"),
+    });
+
+    obj.root_module.addImport("utils", utils_mod);
 }
 
 // taken and modified from: https://github.com/SpexGuy/Zig-AoC-Template/
@@ -32,7 +37,7 @@ pub fn build(b: *std.Build) void {
         const dayString = b.fmt("day{:0>2}", .{day});
         const zigFile = b.fmt("src/days/{s}/day.zig", .{dayString});
 
-        const exe = b.addExecutable(.{
+        const day_exe = b.addExecutable(.{
             .name = dayString,
             .root_module = b.createModule(.{
                 .root_source_file = b.path(zigFile),
@@ -40,9 +45,10 @@ pub fn build(b: *std.Build) void {
                 .optimize = optimize,
             }),
         });
-        linkObject(b, exe);
 
-        const install_cmd = b.addInstallArtifact(exe, .{});
+        linkObject(b, day_exe);
+
+        const install_cmd = b.addInstallArtifact(day_exe, .{});
 
         const build_test = b.addTest(.{
             .root_module = b.createModule(.{
@@ -70,7 +76,7 @@ pub fn build(b: *std.Build) void {
             step.dependOn(&run_test.step);
         }
 
-        const run_cmd = b.addRunArtifact(exe);
+        const run_cmd = b.addRunArtifact(day_exe);
         if (b.args) |args| {
             run_cmd.addArgs(args);
         }
@@ -81,18 +87,18 @@ pub fn build(b: *std.Build) void {
         run_all.dependOn(&run_cmd.step);
     }
 
-    // Set up tests for util.zig
+    // Set up tests for utils.zig
     {
-        const test_util = b.step("test_util", "Run tests in util.zig");
+        const test_utils = b.step("test_utils", "Run tests in utils.zig");
         const test_cmd = b.addTest(.{
             .root_module = b.createModule(.{
-                .root_source_file = b.path("src/util.zig"),
+                .root_source_file = b.path("src/utils.zig"),
                 .target = target,
                 .optimize = optimize,
             }),
         });
         linkObject(b, test_cmd);
-        test_util.dependOn(&test_cmd.step);
+        test_utils.dependOn(&test_cmd.step);
     }
 
     // Set up all tests contained in test_all.zig
