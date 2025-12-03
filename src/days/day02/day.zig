@@ -1,5 +1,4 @@
 const std = @import("std");
-
 const utils = @import("utils");
 
 fn splitIterToArray(allocator: utils.Allocator, iter: *std.mem.SplitIterator(u8, .scalar)) utils.SolveErrors!utils.ListManaged(utils.Str, null) {

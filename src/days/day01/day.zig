@@ -1,5 +1,4 @@
 const std = @import("std");
-
 const utils = @import("utils");
 
 fn modHelper(input: i32, amount: u8) u8 {
