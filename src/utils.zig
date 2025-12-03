@@ -83,19 +83,18 @@ pub const Day = struct {
     solver: Solver,
     examples: Examples,
     root: Str,
+    same_input: bool = false,
 
     fn solve(self: *const Day, allocator: Allocator, input: Str, which: WhichPart) !Solution {
-        const fn_for_solving = switch (self.solver) {
-            .both => |f| f,
+        switch (self.solver) {
+            .both => |f| return f(allocator, input),
             .individual => |individual| {
-                return switch (which) {
-                    .first => individual.first,
-                    .second => individual.second,
-                };
+                switch (which) {
+                    .first => return individual.first(allocator, input),
+                    .second => return individual.second(allocator, input),
+                }
             },
-        };
-
-        return fn_for_solving(allocator, input);
+        }
     }
 
     fn getExample(example: ExampleWrapper) ?Example {
@@ -221,7 +220,7 @@ pub const Day = struct {
 
     pub fn run(self: *const Day, allocator: Allocator) !void {
         {
-            //TODO. allow the same file for example and normal files, and also allow customizations of normal file paths
+            //TODO. also allow customizations of normal file paths
             const file_1 = try self.getNormalFile(allocator, .first);
 
             if (file_1) |input_1| {
@@ -237,7 +236,22 @@ pub const Day = struct {
             }
         }
 
-        //TODO for two
+        {
+            const which_one: WhichPart = if (self.same_input) .first else .second;
+            const file_2 = try self.getNormalFile(allocator, which_one);
+
+            if (file_2) |input_2| {
+                defer allocator.free(input_2);
+                const solution_2 = self.solve(allocator, input_2, .second) catch |err| {
+                    try Day.printError(.second, true, err);
+                    return;
+                };
+
+                try Day.printResult(.second, solution_2);
+            } else {
+                try Day.printErrorString("No file for part 2 found\n");
+            }
+        }
     }
 
     pub fn @"test"(self: *const Day, allocator: Allocator) !void {
@@ -262,7 +276,8 @@ pub const Day = struct {
             const example_2 = Day.getExample(self.examples.second);
 
             if (example_2) |ex2| {
-                const input_2 = try self.getExampleFile(allocator, ex2, .second);
+                const which_one: WhichPart = if (self.same_input) .first else .second;
+                const input_2 = try self.getExampleFile(allocator, ex2, which_one);
                 defer allocator.free(input_2);
 
                 const solution_2 = self.solve(allocator, input_2, .second) catch |err| {

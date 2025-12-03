@@ -24,7 +24,7 @@ fn getLineValues(line: []const u8) ?LineValue {
     return .{ .typ = typ, .number = @intCast(number) };
 }
 
-fn solve(allocator: utils.Allocator, input: utils.Str) utils.SolveResult {
+fn solveFirst(allocator: utils.Allocator, input: utils.Str) utils.SolveResult {
     _ = allocator;
 
     var dial: u8 = 50;
@@ -68,7 +68,56 @@ fn solve(allocator: utils.Allocator, input: utils.Str) utils.SolveResult {
     return .{ .u64 = sum };
 }
 
-const day = utils.Day{ .solver = utils.Solver{ .both = solve }, .examples = .{ .first = .{ .implemented = .{ .solution = .{ .u64 = 3 } } }, .second = .todo }, .root = @import("generated").root };
+fn solveSecond(allocator: utils.Allocator, input: utils.Str) utils.SolveResult {
+    _ = allocator;
+
+    var dial: u8 = 50;
+    var sum: u64 = 0;
+
+    var iter = utils.splitSca(u8, input, '\n');
+
+    while (iter.next()) |line| {
+        if (line.len == 0) {
+            continue;
+        }
+
+        const val = getLineValues(line);
+
+        if (val == null) {
+            return error.ParseError;
+        }
+
+        switch (val.?.typ) {
+            'L' => {
+                const dial_i32: i32 = dial;
+
+                dial = modHelper(dial_i32 - (val.?.number), 100);
+            },
+            'R' => {
+                const dial_i32: i32 = dial;
+
+                dial = modHelper(dial_i32 + (val.?.number), 100);
+            },
+            else => |c| {
+                std.debug.print("parse error: {c} was the start char", .{c});
+                return error.ParseError;
+            },
+        }
+
+        if (dial == 0) {
+            sum += 1;
+        }
+    }
+
+    return .{ .u64 = sum };
+}
+
+const day = utils.Day{
+    .solver = utils.Solver{ .individual = .{ .first = solveFirst, .second = solveSecond } },
+    .examples = .{ .first = .{ .implemented = .{ .solution = .{ .u64 = 3 } } }, .second = .{ .implemented = .{ .solution = .{ .u64 = 6 } } } },
+    .root = @import("generated").root,
+    .same_input = true,
+};
 
 pub fn main() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
