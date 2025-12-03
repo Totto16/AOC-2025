@@ -75,31 +75,20 @@ fn getOverflowCount(dial: i32, num: i32, pos: bool) u32 {
         return amount;
     }
 
-    var n: i32 = num;
-    var sum: u32 = 0;
+    const amount: u32 = @intCast(@divTrunc(num, 100));
 
-    while (n != 0) {
-        if (n >= 100) {
-            n -= 100;
-            sum += 1;
-        } else {
-            if (dial != 0 and dial <= n) {
-                sum += 1;
-            }
+    const aSum: i32 = @intCast(amount * 100);
 
-            n = 0;
-        }
+    const rest: i32 = num - aSum;
+
+    if (dial == 0) {
+        return amount;
+    }
+    if (dial <= rest) {
+        return amount + 1;
     }
 
-    return sum;
-
-    // const val: i32 = dial - num - 100;
-
-    // const amount: i32 = @intCast(@divTrunc(val, -100));
-
-    // std.debug.print("low {d} {d} {d}\n", .{ dial, num, amount });
-
-    // return @intCast(amount);
+    return amount;
 }
 
 fn solveSecond(allocator: utils.Allocator, input: utils.Str) utils.SolveResult {
@@ -143,8 +132,6 @@ fn solveSecond(allocator: utils.Allocator, input: utils.Str) utils.SolveResult {
                 return error.ParseError;
             },
         }
-
-        std.debug.print("dial {d} {d}\n", .{ dial, sum });
     }
 
     return utils.Solution{ .u64 = sum };
