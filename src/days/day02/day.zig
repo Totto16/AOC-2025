@@ -179,7 +179,7 @@ pub const day = utils.Day{
         .real_value = .{ .u64 = 28846518423 },
     } }, .second = .{ .implemented = .{ .solution = .{ .u64 = 4174379265 }, .real_value = .{ .u64 = 31578210022 } } } },
     .root = generated.root,
-    .day = generated.day,
+    .num = generated.num,
     .same_input = true,
 };
 

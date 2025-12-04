@@ -92,7 +92,7 @@ fn getDayFmtArgs(day: u32, style_after: tty.Style) struct { tty.FormatColorSimpl
     return .{ day_color, tty.FormatColorSimple.Cyan, day, day_color, style_after };
 }
 
-pub const Options = struct {
+pub const DayOptions = struct {
     profile: bool = false,
 };
 
@@ -100,7 +100,7 @@ pub const Day = struct {
     solver: Solver,
     examples: Examples,
     root: Str,
-    day: u32,
+    num: u32,
     same_input: bool = false,
 
     fn solve(self: *const Day, allocator: Allocator, input: Str, which: WhichPart) !Solution {
@@ -168,7 +168,7 @@ pub const Day = struct {
         const part = if (which == .first) "1" else "2";
         const type_ = if (is_normal) "Part" else "Example";
 
-        try StderrWriter.printOnceWithDefaultColor(day_fmt ++ " {s} {s}: {}" ++ fmt ++ "\n", getDayFmtArgs(self.day, tty.Style{ .foreground = .Red }) ++ .{ type_, part, tty.Style{ .foreground = .Red, .font_style = .{ .bold = true } } } ++ args);
+        try StderrWriter.printOnceWithDefaultColor(day_fmt ++ " {s} {s}: {}" ++ fmt ++ "\n", getDayFmtArgs(self.num, tty.Style{ .foreground = .Red }) ++ .{ type_, part, tty.Style{ .foreground = .Red, .font_style = .{ .bold = true } } } ++ args);
     }
 
     fn printError(self: *const Day, which: WhichPart, is_normal: bool, err: SolveErrors) !void {
@@ -201,14 +201,14 @@ pub const Day = struct {
     fn printResult(self: *const Day, which: WhichPart, solution: Solution) !void {
         const part = if (which == .first) "1" else "2";
 
-        try StdoutWriter.printOnceWithDefaultColor(day_fmt ++ " Solution for part {}{s}{} is: {}{f}\n", getDayFmtArgs(self.day, tty.Style{ .foreground = .Green }) ++ .{ tty.Style{ .foreground = .Cyan, .font_style = .{ .bold = true } }, part, tty.Style{ .foreground = .Green }, tty.Style{ .foreground = .Magenta, .font_style = .{ .bold = true } }, solution });
+        try StdoutWriter.printOnceWithDefaultColor(day_fmt ++ " Solution for part {}{s}{} is: {}{f}\n", getDayFmtArgs(self.num, tty.Style{ .foreground = .Green }) ++ .{ tty.Style{ .foreground = .Cyan, .font_style = .{ .bold = true } }, part, tty.Style{ .foreground = .Green }, tty.Style{ .foreground = .Magenta, .font_style = .{ .bold = true } }, solution });
     }
 
     pub fn run(self: *const Day, allocator: Allocator) !void {
-        return self.runAdvanced(allocator, null);
+        return self.runAdvanced(allocator, null, null);
     }
 
-    pub fn runAdvanced(self: *const Day, allocator: Allocator, options: ?Options) !void {
+    pub fn runAdvanced(self: *const Day, allocator: Allocator, options: ?DayOptions, progress_node: ?std.Progress.Node) !void {
         var profile: bool = false;
 
         if (options) |opt| {
@@ -216,6 +216,13 @@ pub const Day = struct {
         }
 
         var tracker: Tracker = Tracker.init();
+
+        var sub_node: ?std.Progress.Node = null;
+
+        if (progress_node) |p| {
+            const dayStr = try std.fmt.allocPrint(allocator, "run day {d}", .{self.num});
+            sub_node = p.start(dayStr, 0);
+        }
 
         //TODO. also allow customizations of normal file paths
         {
@@ -225,6 +232,7 @@ pub const Day = struct {
                 defer allocator.free(input_1);
 
                 tracker.startTiming();
+                if (sub_node) |s| s.increaseEstimatedTotalItems(1);
 
                 const solution_1 = self.solve(allocator, input_1, .first) catch |err| {
                     try self.printError(.first, true, err);
@@ -235,10 +243,11 @@ pub const Day = struct {
                 if (profile) {
                     try tracker_result.display();
                 }
+                if (sub_node) |s| s.completeOne();
 
                 try self.printResult(.first, solution_1);
             } else {
-                try StderrWriter.printOnceWithDefaultColor(day_fmt ++ " No file for part 1 found\n", getDayFmtArgs(self.day, tty.Style{ .foreground = .Red }) ++ .{});
+                try StderrWriter.printOnceWithDefaultColor(day_fmt ++ " No file for part 1 found\n", getDayFmtArgs(self.num, tty.Style{ .foreground = .Red }) ++ .{});
             }
         }
 
@@ -250,6 +259,7 @@ pub const Day = struct {
                 defer allocator.free(input_2);
 
                 tracker.startTiming();
+                if (sub_node) |s| s.increaseEstimatedTotalItems(1);
 
                 const solution_2 = self.solve(allocator, input_2, .second) catch |err| {
                     try self.printError(.second, true, err);
@@ -260,12 +270,15 @@ pub const Day = struct {
                 if (profile) {
                     try tracker_result.display();
                 }
+                if (sub_node) |s| s.completeOne();
 
                 try self.printResult(.second, solution_2);
             } else {
-                try StderrWriter.printOnceWithDefaultColor(day_fmt ++ " No file for part 2 found\n", getDayFmtArgs(self.day, tty.Style{ .foreground = .Red }) ++ .{});
+                try StderrWriter.printOnceWithDefaultColor(day_fmt ++ " No file for part 2 found\n", getDayFmtArgs(self.num, tty.Style{ .foreground = .Red }) ++ .{});
             }
         }
+
+        if (sub_node) |s| s.end();
     }
 
     pub fn @"test"(self: *const Day, allocator: Allocator) !void {

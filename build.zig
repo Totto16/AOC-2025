@@ -148,7 +148,7 @@ pub fn build(b: *std.Build) !void {
 
             const generatedName = b.fmt("day{:0>2}/generated.zig", .{day});
 
-            const file_content = b.fmt("pub const root : []const u8 = \"{s}\";\n pub const day : u32 = {d};", .{ zigFileRoot, day });
+            const file_content = b.fmt("pub const root : []const u8 = \"{s}\";\npub const num : u32 = {d};", .{ zigFileRoot, day });
             alloc.free(zigFileRoot);
 
             const file_generated_src = try generateFile(b, alloc, file_content, generatedName);

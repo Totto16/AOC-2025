@@ -45,7 +45,30 @@ fn parseOptions(alloc: utils.Allocator) !Options {
 }
 
 fn runDay(day: utils.Day, alloc: utils.Allocator, profile: bool) !void {
-    try day.runAdvanced(alloc, utils.Options{ .profile = profile });
+    const dayStr = try std.fmt.allocPrint(alloc, "AOC day {d}", .{day.num});
+
+    const progress_node = std.Progress.start(.{ .estimated_total_items = 1, .root_name = dayStr });
+
+    std.Progress.setStatus(.working);
+
+    try day.runAdvanced(alloc, utils.DayOptions{ .profile = profile }, progress_node);
+
+    std.Progress.setStatus(.success);
+    progress_node.end();
+}
+
+fn runAllDays(days: std.array_list.AlignedManaged(utils.Day, null), alloc: utils.Allocator, profile: bool) !void {
+    const progress_node = std.Progress.start(.{ .estimated_total_items = days.items.len, .root_name = "all AOC days" });
+
+    std.Progress.setStatus(.working);
+    for (days.items) |
+        day,
+    | {
+        try day.runAdvanced(alloc, utils.DayOptions{ .profile = profile }, progress_node);
+        progress_node.completeOne();
+    }
+    std.Progress.setStatus(.success);
+    progress_node.end();
 }
 
 const main_helper = @import("main_helper");
@@ -61,14 +84,12 @@ pub fn main() !void {
 
     if (options.day) |got_day| {
         if (got_day == 0) {
-            for (days.items) |day| {
-                try runDay(day, gpa.allocator(), options.profile);
-            }
+            try runAllDays(days, gpa.allocator(), options.profile);
             return;
         }
 
         for (days.items) |day| {
-            if (day.day == options.day) {
+            if (day.num == options.day) {
                 try runDay(day, gpa.allocator(), options.profile);
                 return;
             }
@@ -77,9 +98,7 @@ pub fn main() !void {
         std.debug.panic("invalid day: {}", .{got_day});
         return error.NoSuchDay;
     } else {
-        for (days.items) |day| {
-            try runDay(day, gpa.allocator(), options.profile);
-        }
+        try runAllDays(days, gpa.allocator(), options.profile);
         return;
     }
 }

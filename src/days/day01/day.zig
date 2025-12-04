@@ -146,7 +146,7 @@ pub const day = utils.Day{
     .solver = utils.Solver{ .individual = .{ .first = solveFirst, .second = solveSecond } },
     .examples = .{ .first = .{ .implemented = .{ .solution = .{ .u64 = 3 }, .real_value = .{ .u64 = 982 } } }, .second = .{ .implemented = .{ .solution = .{ .u64 = 6 }, .real_value = .{ .u64 = 6106 } } } },
     .root = generated.root,
-    .day = generated.day,
+    .num = generated.num,
     .same_input = true,
 };
 

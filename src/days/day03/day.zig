@@ -166,7 +166,7 @@ pub const day = utils.Day{
         .real_value = .{ .u64 = 167384358365132 },
     } } },
     .root = generated.root,
-    .day = generated.day,
+    .num = generated.num,
     .same_input = true,
 };
 

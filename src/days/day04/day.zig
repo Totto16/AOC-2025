@@ -202,7 +202,7 @@ pub const day = utils.Day{
         .solution = .{ .u64 = 43 },
     } } },
     .root = generated.root,
-    .day = generated.day,
+    .num = generated.num,
     .same_input = true,
 };
 
