@@ -149,19 +149,19 @@ pub fn main() !void {
                 .fail => try stderr.print(
                     "{}[{}{s}{}]{}\n",
                     .{
-                        getColor(status),
                         tty.FormatColorSimple.Yellow,
-                        @tagName(status),
                         getColor(status),
+                        @tagName(status),
+                        tty.FormatColorSimple.Yellow,
                         tty.Reset{},
                     },
                 ),
 
                 else => try stdout.print("{}[{}{s}{}]{}\n", .{
-                    getColor(status),
                     tty.FormatColorSimple.Cyan,
-                    @tagName(status),
                     getColor(status),
+                    @tagName(status),
+                    tty.FormatColorSimple.Cyan,
                     tty.Reset{},
                 }),
             }
