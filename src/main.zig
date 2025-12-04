@@ -4,6 +4,7 @@ const tty = @import("tty");
 
 const Options = struct {
     day: ?u32,
+    profile: bool = false,
 };
 
 fn printHelp(program: []const u8) !void {
@@ -13,6 +14,7 @@ fn printHelp(program: []const u8) !void {
     try stdout.print("Usage: {s} [options]\n", .{program});
     try stdout.print("\t--day=<day>: specify the day to run\n", .{});
     try stdout.print("\t--help, -h, -?: print this help\n", .{});
+    try stdout.print("\t--profile, -p: profile times\n", .{});
 }
 
 fn parseOptions(alloc: utils.Allocator) !Options {
@@ -31,6 +33,8 @@ fn parseOptions(alloc: utils.Allocator) !Options {
         } else if (std.mem.eql(u8, arg, "--help") or std.mem.eql(u8, arg, "-h") or std.mem.eql(u8, arg, "-?")) {
             try printHelp(args[0]);
             std.process.exit(0);
+        } else if (std.mem.eql(u8, arg, "--profile") or std.mem.eql(u8, arg, "-p")) {
+            options.profile = true;
         } else {
             try printHelp(args[0]);
             std.debug.panic("unrecognized command line argument: {s}", .{arg});
@@ -40,8 +44,8 @@ fn parseOptions(alloc: utils.Allocator) !Options {
     return options;
 }
 
-fn runDay(day: utils.Day, alloc: utils.Allocator) !void {
-    try day.run(alloc);
+fn runDay(day: utils.Day, alloc: utils.Allocator, profile: bool) !void {
+    try day.runAdvanced(alloc, utils.Options{ .profile = profile });
 }
 
 const main_helper = @import("main_helper");
@@ -58,14 +62,14 @@ pub fn main() !void {
     if (options.day) |got_day| {
         if (got_day == 0) {
             for (days.items) |day| {
-                try runDay(day, gpa.allocator());
+                try runDay(day, gpa.allocator(), options.profile);
             }
             return;
         }
 
         for (days.items) |day| {
             if (day.day == options.day) {
-                try runDay(day, gpa.allocator());
+                try runDay(day, gpa.allocator(), options.profile);
                 return;
             }
         }
@@ -74,7 +78,7 @@ pub fn main() !void {
         return error.NoSuchDay;
     } else {
         for (days.items) |day| {
-            try runDay(day, gpa.allocator());
+            try runDay(day, gpa.allocator(), options.profile);
         }
         return;
     }

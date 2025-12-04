@@ -92,6 +92,10 @@ fn getDayFmtArgs(day: u32, style_after: tty.Style) struct { tty.FormatColorSimpl
     return .{ day_color, tty.FormatColorSimple.Cyan, day, day_color, style_after };
 }
 
+pub const Options = struct {
+    profile: bool = false,
+};
+
 pub const Day = struct {
     solver: Solver,
     examples: Examples,
@@ -201,16 +205,36 @@ pub const Day = struct {
     }
 
     pub fn run(self: *const Day, allocator: Allocator) !void {
+        return self.runAdvanced(allocator, null);
+    }
+
+    pub fn runAdvanced(self: *const Day, allocator: Allocator, options: ?Options) !void {
+        var profile: bool = false;
+
+        if (options) |opt| {
+            profile = opt.profile;
+        }
+
+        var tracker: Tracker = Tracker.init();
+
+        //TODO. also allow customizations of normal file paths
         {
-            //TODO. also allow customizations of normal file paths
             const file_1 = try self.getNormalFile(allocator, .first);
 
             if (file_1) |input_1| {
                 defer allocator.free(input_1);
+
+                tracker.startTiming();
+
                 const solution_1 = self.solve(allocator, input_1, .first) catch |err| {
                     try self.printError(.first, true, err);
                     return;
                 };
+
+                const tracker_result = tracker.endTiming();
+                if (profile) {
+                    try tracker_result.display();
+                }
 
                 try self.printResult(.first, solution_1);
             } else {
@@ -224,10 +248,18 @@ pub const Day = struct {
 
             if (file_2) |input_2| {
                 defer allocator.free(input_2);
+
+                tracker.startTiming();
+
                 const solution_2 = self.solve(allocator, input_2, .second) catch |err| {
                     try self.printError(.second, true, err);
                     return;
                 };
+
+                const tracker_result = tracker.endTiming();
+                if (profile) {
+                    try tracker_result.display();
+                }
 
                 try self.printResult(.second, solution_2);
             } else {
@@ -342,5 +374,46 @@ pub const Day = struct {
                 }
             }
         }
+    }
+};
+
+//from: https://gist.github.com/karlseguin/c6bea5b35e4e8d26af6f81c22cb5d76b/1f317ebc9cd09bc50fd5591d09c34255e15d1d85
+// modified heavily
+const Tracker = struct {
+    timer: std.time.Timer,
+
+    fn init() Tracker {
+        const timer = std.time.Timer.start() catch @panic("failed to start timer");
+
+        return .{
+            .timer = timer,
+        };
+    }
+
+    const TestInfo = struct {
+        ns: u64,
+        fn display(self: *const TestInfo) !void {
+            const ms = @as(f64, @floatFromInt(self.ns)) / 1_000_000.0;
+            try StdoutWriter.printOnceWithDefaultColor("Took: {}{d:.2}{} ms\n", .{
+                tty.Style{ .foreground = .Cyan, .font_style = .{ .bold = true } },
+                ms,
+                tty.Style{ .foreground = .Blue },
+            });
+        }
+    };
+
+    fn startTiming(self: *Tracker) void {
+        self.timer.reset();
+    }
+
+    fn endTiming(self: *Tracker) TestInfo {
+        var timer = self.timer;
+        const ns = timer.lap();
+        return TestInfo{ .ns = ns };
+    }
+
+    fn compareTiming(context: void, a: TestInfo, b: TestInfo) std.math.Order {
+        _ = context;
+        return std.math.order(a.ns, b.ns);
     }
 };
