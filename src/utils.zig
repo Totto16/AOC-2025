@@ -78,7 +78,7 @@ pub const Example = struct {
     real_value: ?Solution = null,
 };
 
-pub const ExampleWrapper = union(enum) { todo, implemented: Example };
+pub const ExampleWrapper = union(enum) { pending, implemented: Example };
 
 pub const Examples = struct { first: ExampleWrapper, second: ExampleWrapper };
 
@@ -117,7 +117,7 @@ pub const Day = struct {
 
     fn getExample(example: ExampleWrapper) ?Example {
         switch (example) {
-            .todo => return null,
+            .pending => return null,
             .implemented => |i| {
                 return i;
             },
