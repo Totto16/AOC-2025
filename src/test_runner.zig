@@ -18,9 +18,14 @@ const Status = enum {
     text,
 };
 
-fn printHelp(program: []const u8) void {
-    //TODO
-    _ = program;
+fn printHelp(program: []const u8) !void {
+    var stdout_buffer: [tty.buffer_length]u8 = undefined;
+    var stdout = tty.StdoutWriter.create(&stdout_buffer);
+
+    try stdout.print("Usage: {s} [options]\n", .{program});
+    try stdout.print("\t--fail-first: fail on first test failure\n", .{});
+    try stdout.print("\t--filter=<filter>: specify filter for tests\n", .{});
+    try stdout.print("\t--help, -h, -?: print this help\n", .{});
 }
 
 fn getColor(status: Status) tty.FormatColorSimple {
@@ -50,11 +55,11 @@ pub fn main() !void {
             fail_first = true;
         } else if (std.mem.startsWith(u8, arg, "--filter=")) {
             filter = arg["--filter=".len..];
-        } else if (std.mem.startsWith(u8, arg, "--help")) {
-            printHelp(args[0]);
+        } else if (std.mem.eql(u8, arg, "--help") or std.mem.eql(u8, arg, "-h") or std.mem.eql(u8, arg, "-?")) {
+            try printHelp(args[0]);
             return;
         } else {
-            printHelp(args[0]);
+            try printHelp(args[0]);
             @panic("unrecognized command line argument");
         }
     }
