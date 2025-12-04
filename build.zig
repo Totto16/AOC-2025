@@ -55,6 +55,38 @@ fn fileIsPresent(alloc: std.mem.Allocator, file: []const u8) !bool {
     return true;
 }
 
+fn generateFile(b: *std.Build, alloc: std.mem.Allocator, file_content: []const u8, generatedName: []const u8) !std.Build.LazyPath {
+    const generate_file_src = try b.cache_root.join(alloc, &[_][]const u8{generatedName});
+    defer alloc.free(generate_file_src);
+
+    {
+        const dirname = std.fs.path.dirname(generate_file_src);
+
+        if (dirname) |d| {
+            std.fs.cwd().makeDir(d) catch |err| blk: {
+                if (err != error.PathAlreadyExists) {
+                    return err;
+                }
+                break :blk;
+            };
+        }
+
+        const opened_file = std.fs.cwd().createFile(generate_file_src, .{}) catch |err| blk: {
+            if (err != error.FileAlreadyExists) {
+                return err;
+            }
+            break :blk null;
+        };
+
+        if (opened_file) |f| {
+            defer f.close();
+            try f.writeAll(file_content);
+        }
+    }
+
+    return b.path(generate_file_src).dupe(b);
+}
+
 // taken and modified from: https://github.com/SpexGuy/Zig-AoC-Template/
 pub fn build(b: *std.Build) !void {
     if (comptime @import("builtin").zig_version.order(required_zig_version) == .lt) {
@@ -97,6 +129,9 @@ pub fn build(b: *std.Build) !void {
 
     const test_runner: std.Build.Step.Compile.TestRunner = std.Build.Step.Compile.TestRunner{ .path = b.path("src/test_runner.zig"), .mode = .simple };
 
+    const days: std.array_list.AlignedManaged(u32, null) = try std.array_list.AlignedManaged(u32, null).initCapacity(alloc, 10);
+    defer days.deinit();
+
     // Set up a compile target for each day
     var day: u32 = 1;
     while (day <= 25) : (day += 1) {
@@ -108,39 +143,13 @@ pub fn build(b: *std.Build) !void {
 
             const generatedName = b.fmt("day{:0>2}/generated.zig", .{day});
 
-            const generate_file_src = try b.cache_root.join(alloc, &[_][]const u8{generatedName});
-            defer alloc.free(generate_file_src);
-
             const file_content = b.fmt("pub const root : []const u8 = \"{s}\";\n pub const day : u32 = {d};", .{ zigFileRoot, day });
             alloc.free(zigFileRoot);
 
-            {
-                const dirname = std.fs.path.dirname(generate_file_src);
-
-                if (dirname) |d| {
-                    std.fs.cwd().makeDir(d) catch |err| blk: {
-                        if (err != error.PathAlreadyExists) {
-                            return err;
-                        }
-                        break :blk;
-                    };
-                }
-
-                const opened_file = std.fs.cwd().createFile(generate_file_src, .{}) catch |err| blk: {
-                    if (err != error.FileAlreadyExists) {
-                        return err;
-                    }
-                    break :blk null;
-                };
-
-                if (opened_file) |f| {
-                    defer f.close();
-                    try f.writeAll(file_content);
-                }
-            }
+            const file_generated_src = try generateFile(b, alloc, file_content, generatedName);
 
             const generated_module = b.createModule(.{
-                .root_source_file = b.path(generate_file_src),
+                .root_source_file = file_generated_src,
                 .target = target,
                 .optimize = optimize,
             });
@@ -167,8 +176,6 @@ pub fn build(b: *std.Build) !void {
             }), .test_runner = test_runner });
 
             linkObject(b, build_test, &[_]ModuleKV{ utils_mod_kv, tty_mod_kv, generated_module_kv });
-
-            b.installArtifact(build_test);
 
             const run_test = b.addRunArtifact(build_test);
 
@@ -217,8 +224,6 @@ pub fn build(b: *std.Build) !void {
 
         linkObject(b, test_cmd_utils, &[_]ModuleKV{ utils_mod_kv, tty_mod_kv });
 
-        b.installArtifact(test_cmd_utils);
-
         const run_test_utils = b.addRunArtifact(test_cmd_utils);
         test_utils.dependOn(&run_test_utils.step);
 
@@ -232,11 +237,88 @@ pub fn build(b: *std.Build) !void {
 
         linkObject(b, test_cmd_tty, &[_]ModuleKV{ utils_mod_kv, tty_mod_kv });
 
-        b.installArtifact(test_cmd_tty);
-
         const run_test_tty = b.addRunArtifact(test_cmd_tty);
         test_tty.dependOn(&run_test_tty.step);
 
         test_all.dependOn(&run_test_tty.step);
+    }
+
+    { // main file
+
+        const generatedName = "main/main_helper.zig";
+
+        var daysArr: std.array_list.AlignedManaged(u8, null) = try std.array_list.AlignedManaged(u8, null).initCapacity(alloc, 1024);
+        defer daysArr.deinit();
+
+        for (days.items) |dayNum| {
+            if (daysArr.items.len != 0) {
+                try daysArr.appendSlice(", ");
+            }
+
+            try daysArr.appendSlice(b.fmt("@import(\"src/day{:0>2}/day.zig\"", .{dayNum}));
+        }
+
+        const daysStr: []u8 = try daysArr.toOwnedSlice();
+
+        const file_content = b.fmt("const std = @import(\"std\");\nconst utils = @import(\"utils\");\n\npub const days: []utils.Day = &[_]utils.Day{{{s}}};", .{daysStr});
+
+        const file_generated_src = try generateFile(b, alloc, file_content, generatedName);
+
+        const generated_module = b.createModule(.{
+            .root_source_file = file_generated_src,
+            .target = target,
+            .optimize = optimize,
+        });
+
+        generated_module.addImport(utils_mod_kv.name, utils_mod_kv.module);
+
+        const generated_module_kv = ModuleKV{ .module = generated_module, .name = "main_helper" };
+
+        const main_exe = b.addExecutable(.{
+            .name = "main",
+            .root_module = b.createModule(.{
+                .root_source_file = b.path("src/main.zig"),
+                .target = target,
+                .optimize = optimize,
+            }),
+        });
+
+        linkObject(b, main_exe, &[_]ModuleKV{ utils_mod_kv, tty_mod_kv, generated_module_kv });
+
+        const install_main = b.addInstallArtifact(main_exe, .{});
+
+        const build_test = b.addTest(.{ .root_module = b.createModule(.{
+            .root_source_file = b.path("src/main.zig"),
+            .target = target,
+            .optimize = optimize,
+        }), .test_runner = test_runner });
+
+        linkObject(b, build_test, &[_]ModuleKV{ utils_mod_kv, tty_mod_kv, generated_module_kv });
+
+        const run_test = b.addRunArtifact(build_test);
+
+        {
+            const install_step = b.step("install_main", "Install main");
+            install_step.dependOn(&install_main.step);
+            install_all.dependOn(&install_main.step);
+        }
+
+        {
+            const step = b.step("test_main", "Run tests in main");
+            step.dependOn(&run_test.step);
+        }
+
+        test_all.dependOn(&run_test.step);
+
+        const run_cmd = b.addRunArtifact(main_exe);
+        b.installArtifact(main_exe);
+        if (b.args) |args| {
+            run_cmd.addArgs(args);
+        }
+
+        const run_step = b.step("run_main", "Run main");
+        run_step.dependOn(&run_cmd.step);
+
+        run_all.dependOn(&run_cmd.step);
     }
 }

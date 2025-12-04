@@ -48,7 +48,7 @@ pub fn main() !void {
 
     const args = std.process.argsAlloc(alloc) catch
         @panic("unable to parse command line args");
-    defer alloc.free(args);
+    defer std.process.argsFree(alloc, args);
 
     for (args[1..]) |arg| {
         if (std.mem.eql(u8, arg, "--fail-first")) {
@@ -60,7 +60,7 @@ pub fn main() !void {
             return;
         } else {
             try printHelp(args[0]);
-            @panic("unrecognized command line argument");
+            std.debug.panic("unrecognized command line argument: {s}", .{arg});
         }
     }
 
