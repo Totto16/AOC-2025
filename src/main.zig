@@ -41,10 +41,10 @@ fn parseOptions(alloc: utils.Allocator) !Options {
 }
 
 fn runDay(day: utils.Day, alloc: utils.Allocator) !void {
-    day.run(alloc);
+    try day.run(alloc);
 }
 
-const days = @import("main_helper").days;
+const main_helper = @import("main_helper");
 
 pub fn main() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
@@ -52,17 +52,20 @@ pub fn main() !void {
 
     const options = try parseOptions(gpa.allocator());
 
+    const days: std.array_list.AlignedManaged(utils.Day, null) = try main_helper.getDays(gpa.allocator());
+    defer days.deinit();
+
     if (options.day) |got_day| {
         if (got_day == 0) {
-            for (days) |day| {
-                runDay(day, gpa.allocator());
+            for (days.items) |day| {
+                try runDay(day, gpa.allocator());
             }
             return;
         }
 
-        for (days) |day| {
+        for (days.items) |day| {
             if (day.day == options.day) {
-                runDay(day, gpa.allocator());
+                try runDay(day, gpa.allocator());
                 return;
             }
         }
@@ -70,8 +73,8 @@ pub fn main() !void {
         std.debug.panic("invalid day: {}", .{got_day});
         return error.NoSuchDay;
     } else {
-        for (days) |day| {
-            runDay(day, gpa.allocator());
+        for (days.items) |day| {
+            try runDay(day, gpa.allocator());
         }
         return;
     }

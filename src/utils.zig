@@ -63,7 +63,7 @@ pub const SolveErrors = error{ PredicateNotMet, ParseError, NotSolved, OutOfMemo
 
 pub const SolveResult = SolveErrors!Solution;
 
-const SolveFn = fn (allocator: Allocator, input: Str) SolveResult;
+const SolveFn = *const fn (allocator: Allocator, input: Str) SolveResult;
 
 const IndividualSolver = struct {
     first: SolveFn,

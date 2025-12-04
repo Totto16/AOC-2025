@@ -196,7 +196,7 @@ fn solveSecond(allocator: utils.Allocator, input: utils.Str) utils.SolveResult {
 
 const generated = @import("generated");
 
-const day = utils.Day{
+pub const day = utils.Day{
     .solver = utils.Solver{ .individual = .{ .first = solveFirst, .second = solveSecond } },
     .examples = .{ .first = .{ .implemented = .{ .solution = .{ .u64 = 13 }, .real_value = .{ .u64 = 1549 } } }, .second = .{ .implemented = .{
         .solution = .{ .u64 = 43 },

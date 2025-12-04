@@ -87,6 +87,11 @@ fn generateFile(b: *std.Build, alloc: std.mem.Allocator, file_content: []const u
     return b.path(generate_file_src).dupe(b);
 }
 
+const DayObj = struct {
+    num: u32,
+    module_kv: ModuleKV,
+};
+
 // taken and modified from: https://github.com/SpexGuy/Zig-AoC-Template/
 pub fn build(b: *std.Build) !void {
     if (comptime @import("builtin").zig_version.order(required_zig_version) == .lt) {
@@ -129,7 +134,7 @@ pub fn build(b: *std.Build) !void {
 
     const test_runner: std.Build.Step.Compile.TestRunner = std.Build.Step.Compile.TestRunner{ .path = b.path("src/test_runner.zig"), .mode = .simple };
 
-    const days: std.array_list.AlignedManaged(u32, null) = try std.array_list.AlignedManaged(u32, null).initCapacity(alloc, 10);
+    var days: std.array_list.AlignedManaged(DayObj, null) = try std.array_list.AlignedManaged(DayObj, null).initCapacity(alloc, 10);
     defer days.deinit();
 
     // Set up a compile target for each day
@@ -166,6 +171,8 @@ pub fn build(b: *std.Build) !void {
             });
 
             linkObject(b, day_exe, &[_]ModuleKV{ utils_mod_kv, generated_module_kv });
+
+            try days.append(DayObj{ .num = day, .module_kv = ModuleKV{ .module = day_exe.root_module, .name = dayString } });
 
             const install_cmd = b.addInstallArtifact(day_exe, .{});
 
@@ -250,17 +257,18 @@ pub fn build(b: *std.Build) !void {
         var daysArr: std.array_list.AlignedManaged(u8, null) = try std.array_list.AlignedManaged(u8, null).initCapacity(alloc, 1024);
         defer daysArr.deinit();
 
-        for (days.items) |dayNum| {
+        for (days.items) |dayObj| {
             if (daysArr.items.len != 0) {
-                try daysArr.appendSlice(", ");
+                try daysArr.appendSlice("\n");
             }
 
-            try daysArr.appendSlice(b.fmt("@import(\"src/day{:0>2}/day.zig\"", .{dayNum}));
+            try daysArr.appendSlice(b.fmt("\ttry array.append(@import(\"day{:0>2}\").day);", .{dayObj.num}));
         }
 
         const daysStr: []u8 = try daysArr.toOwnedSlice();
+        defer alloc.free(daysStr);
 
-        const file_content = b.fmt("const std = @import(\"std\");\nconst utils = @import(\"utils\");\n\npub const days: []utils.Day = &[_]utils.Day{{{s}}};", .{daysStr});
+        const file_content = b.fmt("const std = @import(\"std\");\nconst utils = @import(\"utils\");\n\npub fn getDays(alloc: std.mem.Allocator) !std.array_list.AlignedManaged(utils.Day, null) {{\n\tvar array : std.array_list.AlignedManaged(utils.Day, null) = try std.array_list.AlignedManaged(utils.Day, null).initCapacity(alloc, 1024);\n\n{s}\nreturn array;}}", .{daysStr});
 
         const file_generated_src = try generateFile(b, alloc, file_content, generatedName);
 
@@ -271,6 +279,9 @@ pub fn build(b: *std.Build) !void {
         });
 
         generated_module.addImport(utils_mod_kv.name, utils_mod_kv.module);
+        for (days.items) |dayObj| {
+            generated_module.addImport(dayObj.module_kv.name, dayObj.module_kv.module);
+        }
 
         const generated_module_kv = ModuleKV{ .module = generated_module, .name = "main_helper" };
 
