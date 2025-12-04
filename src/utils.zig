@@ -222,6 +222,7 @@ pub const Day = struct {
         if (progress_node) |p| {
             const dayStr = try std.fmt.allocPrint(allocator, "run day {d}", .{self.num});
             sub_node = p.start(dayStr, 0);
+            defer allocator.free(dayStr);
         }
 
         //TODO. also allow customizations of normal file paths

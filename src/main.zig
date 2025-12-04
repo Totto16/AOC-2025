@@ -46,6 +46,7 @@ fn parseOptions(alloc: utils.Allocator) !Options {
 
 fn runDay(day: utils.Day, alloc: utils.Allocator, profile: bool) !void {
     const dayStr = try std.fmt.allocPrint(alloc, "AOC day {d}", .{day.num});
+    defer alloc.free(dayStr);
 
     const progress_node = std.Progress.start(.{ .estimated_total_items = 1, .root_name = dayStr });
 
