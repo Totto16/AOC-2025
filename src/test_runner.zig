@@ -69,7 +69,7 @@ pub fn main() !void {
     var stderr_buffer: [tty.buffer_length]u8 = undefined;
     var stderr = tty.StderrWriter.create(&stderr_buffer);
 
-    try stdout.print("\r{any}", .{tty.Clear.cursor_to_line_end});
+    try stdout.print("\r{}", .{tty.Clear.cursor_to_line_end});
 
     var pass: usize = 0;
     var fail: usize = 0;
@@ -87,14 +87,14 @@ pub fn main() !void {
         }
 
         try stdout.print(
-            "{any}Testing {any}{s}{any}: {any}",
+            "{}Testing {}{s}{}: {}",
             .{ tty.FormatColorSimple.Cyan, tty.Style{ .foreground = .Magenta, .font_style = .{ .bold = true } }, test_fn.name, tty.Style{ .foreground = .Cyan, .font_style = .{ .bold = false } }, tty.Reset{} },
         );
         const result = test_fn.func();
 
         if (std.testing.allocator_instance.deinit() == .leak) {
             leak += 1;
-            try stderr.print("{any}\n{s}\n\"{any}{s}{any}\" - {any}Memory Leak{any}\n{s}\n{any}", .{
+            try stderr.print("{}\n{s}\n\"{}{s}{}\" - {}Memory Leak{}\n{s}\n{}", .{
                 getColor(.fail),
                 BORDER,
                 tty.Style{ .foreground = .Magenta, .font_style = .{ .bold = true } },
@@ -119,7 +119,7 @@ pub fn main() !void {
                     status = .fail;
                     fail += 1;
                     try stderr.print(
-                        "{any}\n{s}\n\"{any}{s}{any}\" - {any}{s}{any}\n{s}\n{any}",
+                        "{}\n{s}\n\"{}{s}{}\" - {}{s}{}\n{s}\n{}",
                         .{
                             getColor(.fail),
                             BORDER,
@@ -147,7 +147,7 @@ pub fn main() !void {
         {
             switch (status) {
                 .fail => try stderr.print(
-                    "{any}[{any}{s}{any}]{any}\n",
+                    "{}[{}{s}{}]{}\n",
                     .{
                         getColor(status),
                         tty.FormatColorSimple.Yellow,
@@ -157,7 +157,7 @@ pub fn main() !void {
                     },
                 ),
 
-                else => try stdout.print("{any}[{any}{s}{any}]{any}\n", .{
+                else => try stdout.print("{}[{}{s}{}]{}\n", .{
                     getColor(status),
                     tty.FormatColorSimple.Cyan,
                     @tagName(status),
@@ -174,7 +174,7 @@ pub fn main() !void {
     {
         switch (status) {
             .fail => {
-                try stderr.print("{}\n{any}{d}{any} of {any}{d}{any} test{s} passed\n{}", .{
+                try stderr.print("{}\n{}{d}{} of {}{d}{} test{s} passed\n{}", .{
                     getColor(status),
                     tty.FormatColorSimple.Yellow,
                     pass,
@@ -187,7 +187,7 @@ pub fn main() !void {
                 });
             },
             else => {
-                try stdout.print("{}\n{any}{d}{any} of {any}{d}{any} test{s} passed\n{}", .{
+                try stdout.print("{}\n{}{d}{} of {}{d}{} test{s} passed\n{}", .{
                     getColor(status),
                     tty.FormatColorSimple.Yellow,
                     pass,
@@ -203,7 +203,7 @@ pub fn main() !void {
     }
 
     if (skip > 0) {
-        try stdout.print("{}{any}{d}{any} test{s} skipped\n{}", .{
+        try stdout.print("{}{}{d}{} test{s} skipped\n{}", .{
             getColor(.skip),
             tty.FormatColorSimple.Yellow,
             skip,
@@ -214,7 +214,7 @@ pub fn main() !void {
     }
     if (leak > 0) {
         try stderr.print(
-            "{}{any}{d}{any} test{s} leaked\n{}",
+            "{}{}{d}{} test{s} leaked\n{}",
             .{
                 getColor(.fail),
                 tty.FormatColorSimple.Yellow,
