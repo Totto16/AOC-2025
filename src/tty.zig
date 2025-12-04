@@ -57,7 +57,6 @@ const assert = std.debug.assert;
 
 pub const Reset = struct {};
 
-pub const StrFormat = struct {};
 
 pub const Clear = enum(u8) {
     current_line,
@@ -90,10 +89,6 @@ fn get_color_type(value: anytype) ?ColorType {
 
     if (T == Reset) {
         return .reset;
-    }
-
-    if (T == StrFormat) {
-        return .str_format;
     }
 
     if (T == Clear) {
@@ -451,10 +446,6 @@ test "style formatting" {
     { // background_color
         try std.testing.expectEqual(ColorType{ .background_color = .Blue }, get_color_type(BackgroundColor{ .background_color = .Blue }));
         try std.testing.expectEqual(null, get_color_type(.{ .background_color = .Blue }));
-    }
-
-    { // reset
-        try std.testing.expectEqual(ColorType.str_format, get_color_type(StrFormat{}));
     }
 
     { // other types
