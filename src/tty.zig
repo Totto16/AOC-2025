@@ -5,8 +5,8 @@ const st = ansi_term.style;
 const ansi_fmt = ansi_term.format;
 const ansi_clear = ansi_term.clear;
 
-pub const Style = ansi_term.style.Style;
-pub const Color = ansi_term.style.Color;
+pub const Style = st.Style;
+pub const Color = st.Color;
 
 const assert = std.debug.assert;
 
@@ -52,7 +52,15 @@ fn get_color_type(value: anytype) ?ColorType {
         return .{ .style = value };
     }
 
+    if (T == Style) {
+        return .{ .style = value };
+    }
+
     if (T == st.Color) {
+        return .{ .foreground_color = value };
+    }
+
+    if (T == Color) {
         return .{ .foreground_color = value };
     }
 
@@ -268,33 +276,44 @@ const buffer_length: comptime_int = 4096;
 
 const TTYWriter = struct {
     buffer: [buffer_length]u8 = undefined,
-    writer: std.Io.Writer,
+    writer: std.fs.File.Writer,
 
     pub fn createFromFile(file: std.fs.File) TTYWriter {
-        const result = TTYWriter{ .buffer = undefined, .stderr_writer = undefined };
+        var result = TTYWriter{ .buffer = undefined, .writer = undefined };
 
         result.writer = file.writer(&result.buffer);
 
         return result;
     }
 
-    fn printTo(writer: *std.Io.Writer, color: st.Color, comptime fmt: []const u8, args: anytype) !void {
+    fn printTo(writer: *std.Io.Writer, color: ?st.Color, comptime fmt: []const u8, args: anytype) !void {
         const ArgsType = @TypeOf(args);
         const args_type_info = @typeInfo(ArgsType);
         if (args_type_info != .@"struct") {
             @compileError("expected tuple or struct argument, found " ++ @typeName(ArgsType));
         }
 
-        const new_fmt = "{any}" ++ fmt ++ "{any}";
-        const new_args = .{color} ++ args ++ .{Reset{}};
+        if (color != null) {
+            return try printToImpl(writer, "{any}" ++ fmt ++ "{any}", .{color.?} ++ args ++ .{Reset{}});
+        }
 
-        try printFunctionPrivate(writer, new_fmt, new_args);
+        return try printToImpl(writer, fmt, args);
+    }
+
+    fn printToImpl(writer: *std.Io.Writer, comptime fmt: []const u8, args: anytype) !void {
+        const ArgsType = @TypeOf(args);
+        const args_type_info = @typeInfo(ArgsType);
+        if (args_type_info != .@"struct") {
+            @compileError("expected tuple or struct argument, found " ++ @typeName(ArgsType));
+        }
+
+        try printFunctionPrivate(writer, fmt, args);
         try writer.flush();
     }
 
-    pub fn print(self: *StderrWriter, color: st.Color, comptime fmt: []const u8, args: anytype) !void {
+    pub fn print(self: *TTYWriter, color: ?st.Color, comptime fmt: []const u8, args: anytype) !void {
         const io_writer = &self.writer.interface;
-        self.printTo(io_writer, color, fmt, args);
+        try TTYWriter.printTo(io_writer, color, fmt, args);
     }
 };
 
@@ -315,8 +334,12 @@ pub const StderrWriter = struct {
         try TTYWriter.printTo(stderr, st.Color.Red, fmt, args);
     }
 
+    pub fn printRaw(self: *StderrWriter, comptime fmt: []const u8, args: anytype, color: ?st.Color) !void {
+        return self.writer.print(color, fmt, args);
+    }
+
     pub fn print(self: *StderrWriter, comptime fmt: []const u8, args: anytype) !void {
-        return self.writer.print(st.Color.Red, fmt, args);
+        return self.printRaw(fmt, args, st.Color.Red);
     }
 };
 
@@ -337,7 +360,11 @@ pub const StdoutWriter = struct {
         try TTYWriter.printTo(stdout, st.Color.Green, fmt, args);
     }
 
-    pub fn print(self: *StderrWriter, comptime fmt: []const u8, args: anytype) !void {
-        return self.writer.print(st.Color.Green, fmt, args);
+    pub fn printRaw(self: *StdoutWriter, comptime fmt: []const u8, args: anytype, color: ?st.Color) !void {
+        return self.writer.print(color, fmt, args);
+    }
+
+    pub fn print(self: *StdoutWriter, comptime fmt: []const u8, args: anytype) !void {
+        return self.printRaw(fmt, args, st.Color.Green);
     }
 };
