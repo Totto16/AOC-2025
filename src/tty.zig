@@ -6,7 +6,51 @@ const ansi_fmt = ansi_term.format;
 const ansi_clear = ansi_term.clear;
 
 pub const Style = st.Style;
-pub const Color = st.Color;
+
+pub const FormatColorSimple = enum(u8) {
+    Default,
+    Black,
+    Red,
+    Green,
+    Yellow,
+    Blue,
+    Magenta,
+    Cyan,
+    White,
+
+    pub fn toAnsiColor(self: FormatColorSimple) st.Color {
+        return switch (self) {
+            .Default => st.Color.Default,
+            .Black => st.Color.Black,
+            .Red => st.Color.Red,
+            .Green => st.Color.Green,
+            .Yellow => st.Color.Yellow,
+            .Blue => st.Color.Blue,
+            .Magenta => st.Color.Magenta,
+            .Cyan => st.Color.Cyan,
+            .White => st.Color.White,
+        };
+    }
+};
+
+pub const ColorRGB = st.ColorRGB;
+
+pub const FormatColorExtended = union(enum(u8)) {
+    Simple: FormatColorSimple,
+    Fixed: u8,
+    Grey: u8,
+    RGB: st.ColorRGB,
+
+    pub fn toAnsiColor(self: FormatColorExtended) st.Color {
+        return switch (self) {
+            .Simple => |s| s.toAnsiColor(),
+            .Fixed => |val| st.Color{ .Fixed = val },
+            .Grey => |val| st.Color{ .Grey = val },
+            .RGB => |val| st.Color{ .RGB = val },
+        };
+    }
+};
+
 pub const FontStyle = st.FontStyle;
 
 const assert = std.debug.assert;
@@ -23,10 +67,10 @@ pub const Clear = enum(u8) {
 };
 
 pub const ForegroundColor = struct {
-    foreground_color: Color,
+    foreground_color: FormatColorSimple,
 };
 pub const BackgroundColor = struct {
-    background_color: Color,
+    background_color: FormatColorSimple,
 };
 
 const ColorType = union(enum) {
@@ -34,8 +78,8 @@ const ColorType = union(enum) {
     clear: Clear,
     style: Style,
     font_style: FontStyle,
-    foreground_color: Color,
-    background_color: Color,
+    foreground_color: st.Color,
+    background_color: st.Color,
 };
 
 fn get_color_type(value: anytype) ?ColorType {
@@ -53,56 +97,20 @@ fn get_color_type(value: anytype) ?ColorType {
         return .{ .style = value };
     }
 
-    if (T == Color) {
-        return .{ .foreground_color = value };
+    if (T == FormatColorSimple) {
+        return .{ .foreground_color = value.toAnsiColor() };
     }
 
-    // Reject: Tag type (enum tag)
-    // if (comptime @typeInfo(T) == .@"enum") {
-    //     @compileError("Union tag passed, but a full union value was expected.");
-    // }
-
-    if (T == std.meta.Tag(Color)) {
-        //   const enum_val = @unionInit(Color, Color.Blue, {});
-        //  return .{ .foreground_color = enum_val };
-
-        const color_actual: ?Color = switch (@typeInfo(T)) {
-            .@"union" => value, // already a union
-            .@"enum" => blk: {
-
-                // Find the correct field in the union by its tag
-                const UInfo = @typeInfo(Color).@"union";
-                inline for (UInfo.fields) |f| {
-                    if (std.mem.eql(u8, f.name, @tagName(value))) {
-                        if (f.type == void) {
-                            // No payload
-
-                            break :blk @unionInit(Color, f.name, {});
-                        } else {
-                            @compileError("Expected enum tag for union with name " ++ f.name ++ "to have empty value, but has type: " ++ @typeName(f.type) ++ @typeName(T));
-                        }
-                    }
-                }
-
-                @compileError("Enum tag does not belong to union 'Color'");
-            },
-
-            else => @compileError("Expected Color or Color.Tag"),
-        };
-
-        return .{ .foreground_color = color_actual };
+    if (T == FormatColorExtended) {
+        return .{ .foreground_color = value.toAnsiColor() };
     }
-
-    // comptime if (T == std.meta.Tag(Color)) {
-    //      @compileError("error, passed union tag of Color: " ++ @typeName(T));
-    //  };
 
     if (T == BackgroundColor) {
-        return .{ .background_color = value.background_color };
+        return .{ .background_color = value.background_color.toAnsiColor() };
     }
 
     if (T == ForegroundColor) {
-        return .{ .foreground_color = value.foreground_color };
+        return .{ .foreground_color = value.foreground_color.toAnsiColor() };
     }
 
     if (T == FontStyle) {
@@ -324,21 +332,7 @@ const TTYWriter = struct {
         return TTYWriter{ .writer = file.writer(buffer) };
     }
 
-    fn printTo(writer: *std.Io.Writer, color: ?Color, comptime fmt: []const u8, args: anytype) !void {
-        const ArgsType = @TypeOf(args);
-        const args_type_info = @typeInfo(ArgsType);
-        if (args_type_info != .@"struct") {
-            @compileError("expected tuple or struct argument, found " ++ @typeName(ArgsType));
-        }
-
-        if (color) |clr| {
-            return try printToImpl(writer, "{any}" ++ fmt ++ "{any}", .{clr} ++ args ++ .{Reset{}});
-        }
-
-        return try printToImpl(writer, fmt, args);
-    }
-
-    fn printToImpl(writer: *std.Io.Writer, comptime fmt: []const u8, args: anytype) !void {
+    fn printTo(writer: *std.Io.Writer, comptime fmt: []const u8, args: anytype) !void {
         const ArgsType = @TypeOf(args);
         const args_type_info = @typeInfo(ArgsType);
         if (args_type_info != .@"struct") {
@@ -349,9 +343,9 @@ const TTYWriter = struct {
         try writer.flush();
     }
 
-    pub fn print(self: *TTYWriter, color: ?Color, comptime fmt: []const u8, args: anytype) !void {
+    pub fn print(self: *TTYWriter, comptime fmt: []const u8, args: anytype) !void {
         const io_writer = &self.writer.interface;
-        try TTYWriter.printTo(io_writer, color, fmt, args);
+        try TTYWriter.printTo(io_writer, fmt, args);
     }
 };
 
@@ -369,15 +363,11 @@ pub const StderrWriter = struct {
         var stderr_writer = std.fs.File.stderr().writer(&stderr_buffer);
         const stderr = &stderr_writer.interface;
 
-        try TTYWriter.printTo(stderr, Color.Red, fmt, args);
-    }
-
-    pub fn printRaw(self: *StderrWriter, comptime fmt: []const u8, args: anytype, color: ?Color) !void {
-        return self.writer.print(color, fmt, args);
+        try TTYWriter.printTo(stderr, fmt, args);
     }
 
     pub fn print(self: *StderrWriter, comptime fmt: []const u8, args: anytype) !void {
-        return self.printRaw(fmt, args, Color.Red);
+        return self.writer.print(fmt, args);
     }
 };
 
@@ -395,15 +385,11 @@ pub const StdoutWriter = struct {
         var stdout_writer = std.fs.File.stdout().writer(&stdout_buffer);
         const stdout = &stdout_writer.interface;
 
-        try TTYWriter.printTo(stdout, Color.Green, fmt, args);
-    }
-
-    pub fn printRaw(self: *StdoutWriter, comptime fmt: []const u8, args: anytype, color: ?Color) !void {
-        return self.writer.print(color, fmt, args);
+        try TTYWriter.printTo(stdout, fmt, args);
     }
 
     pub fn print(self: *StdoutWriter, comptime fmt: []const u8, args: anytype) !void {
-        return self.printRaw(fmt, args, Color.Green);
+        return self.writer.print(fmt, args);
     }
 };
 
@@ -418,7 +404,7 @@ test "style formatting" {
     }
 
     { // style
-        try std.testing.expectEqual(ColorType{ .style = Style{ .foreground = Color.Red } }, get_color_type(Style{ .foreground = Color.Red }));
+        try std.testing.expectEqual(ColorType{ .style = Style{ .foreground = .Red } }, get_color_type(Style{ .foreground = .Red }));
         try std.testing.expectEqual(ColorType{ .style = Style{ .foreground = .Red, .background = .Blue, .font_style = .{ .bold = true } } }, get_color_type(Style{ .foreground = .Red, .background = .Blue, .font_style = .{ .bold = true } }));
         try std.testing.expectEqual(null, get_color_type(.{ .foreground = .Red }));
         try std.testing.expectEqual(null, get_color_type(.{ .foreground = .Red, .background = .Blue, .font_style = .{ .bold = true } }));
@@ -430,16 +416,16 @@ test "style formatting" {
     }
 
     { // foreground_color
-        try std.testing.expectEqual(ColorType{ .foreground_color = Color.Red }, get_color_type(Color.Red));
-        try std.testing.expectEqual(ColorType{ .foreground_color = Color.Red }, get_color_type(.Red));
-        try std.testing.expectEqual(ColorType{ .foreground_color = Color.Blue }, get_color_type(.Blue));
-        try std.testing.expectEqual(ColorType{ .foreground_color = Color.Blue }, get_color_type(ForegroundColor{ .foreground_color = .Blue }));
+        try std.testing.expectEqual(ColorType{ .foreground_color = .Red }, get_color_type(FormatColorSimple.Red));
+        try std.testing.expectEqual(null, get_color_type(.Red));
+        try std.testing.expectEqual(null, get_color_type(.Blue));
+        try std.testing.expectEqual(ColorType{ .foreground_color = .Blue }, get_color_type(ForegroundColor{ .foreground_color = .Blue }));
         try std.testing.expectEqual(null, get_color_type(.{ .foreground_color = .Blue }));
-        try std.testing.expectEqual(ColorType{ .foreground_color = Color{ .Grey = 1 } }, get_color_type(Color{ .Grey = 1 }));
+        try std.testing.expectEqual(ColorType{ .foreground_color = .{ .Grey = 1 } }, get_color_type(FormatColorExtended{ .Grey = 1 }));
     }
 
     { // background_color
-        try std.testing.expectEqual(ColorType{ .foreground_color = Color.Blue }, get_color_type(BackgroundColor{ .background_color = .Blue }));
-        try std.testing.expectEqual(ColorType{ .background_color = Color.Blue }, get_color_type(.{ .background_color = .Blue }));
+        try std.testing.expectEqual(ColorType{ .background_color = .Blue }, get_color_type(BackgroundColor{ .background_color = .Blue }));
+        try std.testing.expectEqual(null, get_color_type(.{ .background_color = .Blue }));
     }
 }

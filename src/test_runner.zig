@@ -23,12 +23,12 @@ fn printHelp(program: []const u8) void {
     _ = program;
 }
 
-fn getColor(status: Status) tty.Color {
+fn getColor(status: Status) tty.FormatColorSimple {
     return switch (status) {
-        .pass => tty.Color.Green,
-        .fail => tty.Color.Red,
-        .skip => tty.Color.Yellow,
-        else => tty.Color.Default,
+        .pass => tty.FormatColorSimple.Green,
+        .fail => tty.FormatColorSimple.Red,
+        .skip => tty.FormatColorSimple.Yellow,
+        else => tty.FormatColorSimple.Default,
     };
 }
 
@@ -63,10 +63,13 @@ pub fn main() !void {
         @compileError("fuzz not allowed");
     }
 
-    var stdout = tty.StdoutWriter.create();
-    var stderr = tty.StderrWriter.create();
+    var stdout_buffer: [tty.buffer_length]u8 = undefined;
+    var stdout = tty.StdoutWriter.create(&stdout_buffer);
 
-    try stdout.printRaw("\r{any}", .{tty.Clear.cursor_to_line_end}, null);
+    var stderr_buffer: [tty.buffer_length]u8 = undefined;
+    var stderr = tty.StderrWriter.create(&stderr_buffer);
+
+    try stdout.print("\r{any}", .{tty.Clear.cursor_to_line_end});
 
     var pass: usize = 0;
     var fail: usize = 0;
@@ -83,24 +86,25 @@ pub fn main() !void {
             }
         }
 
-        try stdout.printRaw("Testing {any}{s}{any}: ", .{
-            tty.Style{ .foreground = tty.Color.Magenta, .font_style = .{ .bold = true } },
-            test_fn.name,
-            tty.Style{ .foreground = tty.Color.Cyan, .font_style = .{ .bold = false } },
-        }, tty.Color.Cyan);
+        try stdout.print(
+            "{any}Testing {any}{s}{any}: {any}",
+            .{ tty.FormatColorSimple.Cyan, tty.Style{ .foreground = .Magenta, .font_style = .{ .bold = true } }, test_fn.name, tty.Style{ .foreground = .Cyan, .font_style = .{ .bold = false } }, tty.Reset{} },
+        );
         const result = test_fn.func();
 
         if (std.testing.allocator_instance.deinit() == .leak) {
             leak += 1;
-            try stderr.printRaw("\n{s}\n\"{any}{s}{any}\" - {any}Memory Leak{any}\n{s}\n", .{
+            try stderr.print("{any}\n{s}\n\"{any}{s}{any}\" - {any}Memory Leak{any}\n{s}\n{any}", .{
+                getColor(.fail),
                 BORDER,
-                tty.Style{ .foreground = tty.Color.Magenta, .font_style = .{ .bold = true } },
+                tty.Style{ .foreground = .Magenta, .font_style = .{ .bold = true } },
                 test_fn.name,
-                tty.Style{ .foreground = tty.Color.Red, .font_style = .{ .bold = false } },
-                tty.Color.Yellow,
-                tty.Color.Red,
+                tty.Style{ .foreground = .Red, .font_style = .{ .bold = false } },
+                tty.FormatColorSimple.Yellow,
+                tty.FormatColorSimple.Red,
                 BORDER,
-            }, getColor(.fail));
+                tty.Reset{},
+            });
         }
 
         if (result) |_| {
@@ -114,16 +118,21 @@ pub fn main() !void {
                 else => {
                     status = .fail;
                     fail += 1;
-                    try stderr.printRaw("\n{s}\n\"{any}{s}{any}\" - {any}{s}{any}\n{s}\n", .{
-                        BORDER,
-                        tty.Style{ .foreground = tty.Color.Magenta, .font_style = .{ .bold = true } },
-                        test_fn.name,
-                        tty.Style{ .foreground = tty.Color.Red, .font_style = .{ .bold = false } },
-                        tty.Color.Yellow,
-                        @errorName(err),
-                        tty.Color.Red,
-                        BORDER,
-                    }, getColor(.fail));
+                    try stderr.print(
+                        "{any}\n{s}\n\"{any}{s}{any}\" - {any}{s}{any}\n{s}\n{any}",
+                        .{
+                            getColor(.fail),
+                            BORDER,
+                            tty.Style{ .foreground = .Magenta, .font_style = .{ .bold = true } },
+                            test_fn.name,
+                            tty.Style{ .foreground = .Red, .font_style = .{ .bold = false } },
+                            tty.FormatColorSimple.Yellow,
+                            @errorName(err),
+                            tty.FormatColorSimple.Red,
+                            BORDER,
+                            tty.Reset{},
+                        },
+                    );
 
                     if (@errorReturnTrace()) |trace| {
                         std.debug.dumpStackTrace(trace.*);
@@ -137,8 +146,24 @@ pub fn main() !void {
 
         {
             switch (status) {
-                .fail => try stderr.printRaw("[{any}{s}{any}]\n", .{ tty.Color.Yellow, @tagName(status), getColor(status) }, getColor(status)),
-                else => try stdout.printRaw("[{any}{s}{any}]\n", .{ tty.Color.Cyan, @tagName(status), getColor(status) }, getColor(status)),
+                .fail => try stderr.print(
+                    "{any}[{any}{s}{any}]{any}\n",
+                    .{
+                        getColor(status),
+                        tty.FormatColorSimple.Yellow,
+                        @tagName(status),
+                        getColor(status),
+                        tty.Reset{},
+                    },
+                ),
+
+                else => try stdout.print("{any}[{any}{s}{any}]{any}\n", .{
+                    getColor(status),
+                    tty.FormatColorSimple.Cyan,
+                    @tagName(status),
+                    getColor(status),
+                    tty.Reset{},
+                }),
             }
         }
     }
@@ -149,19 +174,56 @@ pub fn main() !void {
     {
         switch (status) {
             .fail => {
-                try stderr.printRaw("\n{any}{d}{any} of {any}{d}{any} test{s} passed\n", .{ tty.Color.Yellow, pass, getColor(status), tty.Color.Cyan, total_tests, getColor(status), if (total_tests != 1) "s" else "" }, getColor(status));
+                try stderr.print("{}\n{any}{d}{any} of {any}{d}{any} test{s} passed\n{}", .{
+                    getColor(status),
+                    tty.FormatColorSimple.Yellow,
+                    pass,
+                    getColor(status),
+                    tty.FormatColorSimple.Cyan,
+                    total_tests,
+                    getColor(status),
+                    if (total_tests != 1) "s" else "",
+                    tty.Reset{},
+                });
             },
             else => {
-                try stdout.printRaw("\n{any}{d}{any} of {any}{d}{any} test{s} passed\n", .{ tty.Color.Yellow, pass, getColor(status), tty.Color.Cyan, total_tests, getColor(status), if (total_tests != 1) "s" else "" }, getColor(status));
+                try stdout.print("{}\n{any}{d}{any} of {any}{d}{any} test{s} passed\n{}", .{
+                    getColor(status),
+                    tty.FormatColorSimple.Yellow,
+                    pass,
+                    getColor(status),
+                    tty.FormatColorSimple.Cyan,
+                    total_tests,
+                    getColor(status),
+                    if (total_tests != 1) "s" else "",
+                    tty.Reset{},
+                });
             },
         }
     }
 
     if (skip > 0) {
-        try stdout.printRaw("{any}{d}{any} test{s} skipped\n", .{ tty.Color.Yellow, skip, getColor(.skip), if (skip != 1) "s" else "" }, getColor(.skip));
+        try stdout.print("{}{any}{d}{any} test{s} skipped\n{}", .{
+            getColor(.skip),
+            tty.FormatColorSimple.Yellow,
+            skip,
+            getColor(.skip),
+            if (skip != 1) "s" else "",
+            tty.Reset{},
+        });
     }
     if (leak > 0) {
-        try stderr.printRaw("{any}{d}{any} test{s} leaked\n", .{ tty.Color.Yellow, leak, getColor(.fail), if (leak != 1) "s" else "" }, getColor(.fail));
+        try stderr.print(
+            "{}{any}{d}{any} test{s} leaked\n{}",
+            .{
+                getColor(.fail),
+                tty.FormatColorSimple.Yellow,
+                leak,
+                getColor(.fail),
+                if (leak != 1) "s" else "",
+                tty.Reset{},
+            },
+        );
     }
     std.process.exit(if (fail == 0) 0 else 1);
 }
