@@ -44,6 +44,8 @@ fn parseOptions(alloc: utils.Allocator) !Options {
     return options;
 }
 
+//TODO: make the progress disableable. ans also in the test runner
+
 fn runDay(day: utils.Day, alloc: utils.Allocator, profile: bool) !void {
     const dayStr = try std.fmt.allocPrint(alloc, "AOC day {d}", .{day.num});
     defer alloc.free(dayStr);

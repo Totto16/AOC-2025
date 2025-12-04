@@ -357,7 +357,7 @@ pub const Day = struct {
 
                         try std.testing.expectEqual(real_sol, solution_1);
                     } else {
-                        try StderrWriter.printOnceWithDefaultColor(day_fmt ++ " No file for part 1 found\n", getDayFmtArgs(self.day, tty.Style{ .foreground = .Red }) ++ .{});
+                        try StderrWriter.printOnceWithDefaultColor(day_fmt ++ " No file for part 1 found\n", getDayFmtArgs(self.num, tty.Style{ .foreground = .Red }) ++ .{});
                         try std.testing.expect(false);
                     }
                 }
@@ -382,7 +382,7 @@ pub const Day = struct {
 
                         try std.testing.expectEqual(real_sol, solution_2);
                     } else {
-                        try StderrWriter.printOnceWithDefaultColor(day_fmt ++ " No file for part 2 found\n", getDayFmtArgs(self.day, tty.Style{ .foreground = .Red }) ++ .{});
+                        try StderrWriter.printOnceWithDefaultColor(day_fmt ++ " No file for part 2 found\n", getDayFmtArgs(self.num, tty.Style{ .foreground = .Red }) ++ .{});
                         try std.testing.expect(false);
                     }
                 }

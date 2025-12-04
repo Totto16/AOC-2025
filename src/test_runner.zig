@@ -81,6 +81,9 @@ pub fn main() !void {
     var skip: usize = 0;
     var leak: usize = 0;
 
+    const progress_node = std.Progress.start(.{ .estimated_total_items = builtin.test_functions.len, .root_name = "all tests" });
+    std.Progress.setStatus(.working);
+
     for (builtin.test_functions) |test_fn| {
         std.testing.allocator_instance = .{};
         var status = Status.pass;
@@ -96,6 +99,7 @@ pub fn main() !void {
             .{ tty.FormatColorSimple.Cyan, tty.Style{ .foreground = .Magenta, .font_style = .{ .bold = true } }, test_fn.name, tty.Style{ .foreground = .Cyan, .font_style = .{ .bold = false } }, tty.Reset{} },
         );
         const result = test_fn.func();
+        progress_node.completeOne();
 
         if (std.testing.allocator_instance.deinit() == .leak) {
             leak += 1;
@@ -230,5 +234,10 @@ pub fn main() !void {
             },
         );
     }
+
+    std.Progress.setStatus(if (fail == 0) .success else .failure);
+
+    progress_node.end();
+
     std.process.exit(if (fail == 0) 0 else 1);
 }
