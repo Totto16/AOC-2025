@@ -57,6 +57,8 @@ const assert = std.debug.assert;
 
 pub const Reset = struct {};
 
+pub const StrFormat = struct {};
+
 pub const Clear = enum(u8) {
     current_line,
     cursor_to_line_begin,
@@ -80,6 +82,7 @@ const ColorType = union(enum) {
     font_style: FontStyle,
     foreground_color: st.Color,
     background_color: st.Color,
+    str_format,
 };
 
 fn get_color_type(value: anytype) ?ColorType {
@@ -87,6 +90,10 @@ fn get_color_type(value: anytype) ?ColorType {
 
     if (T == Reset) {
         return .reset;
+    }
+
+    if (T == StrFormat) {
+        return .str_format;
     }
 
     if (T == Clear) {
@@ -122,7 +129,17 @@ fn get_color_type(value: anytype) ?ColorType {
 
 pub const print = printFunctionPrivate;
 
-fn printColor(w: *std.Io.Writer, color_type: ColorType, last_style: *?Style) !void {
+fn printColor(w: *std.Io.Writer, comptime fmt: []const u8, color_type: ColorType, last_style: *?Style) !void {
+    if (color_type != .str_format) {
+        switch (fmt.len) {
+            0 => {},
+            else => {
+                std.debug.print("invalid format string '{s}' for color / style like type, expect empty {{}}\n", .{fmt});
+                return error.FmtInvalid;
+            },
+        }
+    }
+
     switch (color_type) {
         .reset => {
             try ansi_fmt.resetStyle(w);
@@ -177,10 +194,21 @@ fn printColor(w: *std.Io.Writer, color_type: ColorType, last_style: *?Style) !vo
             try ansi_fmt.updateStyle(w, style_now, last_style.*);
             last_style.* = style_now;
         },
+        .str_format => {
+            // use fmt to determine color
+
+        },
     }
 }
 
-pub fn printFunctionPrivate(w: *std.Io.Writer, comptime fmt: []const u8, args: anytype) std.Io.Writer.Error!void {
+pub const PrintError = error{
+    /// See the `Writer` implementation for detailed diagnostics.
+    WriteFailed,
+    // color formatting errors
+    FmtInvalid
+};
+
+pub fn printFunctionPrivate(w: *std.Io.Writer, comptime fmt: []const u8, args: anytype) PrintError!void {
     const ArgsType = @TypeOf(args);
     const args_type_info = @typeInfo(ArgsType);
     if (args_type_info != .@"struct") {
@@ -293,7 +321,7 @@ pub fn printFunctionPrivate(w: *std.Io.Writer, comptime fmt: []const u8, args: a
         const field = @field(args, fields_info[arg_to_print].name);
 
         if (get_color_type(field)) |color_type| {
-            try printColor(w, color_type, &last_style);
+            try printColor(w, placeholder.specifier_arg, color_type, &last_style);
         } else {
             try w.printValue(
                 placeholder.specifier_arg,
@@ -306,10 +334,6 @@ pub fn printFunctionPrivate(w: *std.Io.Writer, comptime fmt: []const u8, args: a
                 field,
                 std.options.fmt_max_depth,
             );
-
-            //TODO
-            //  _ = width;
-            //  _ = precision;
         }
     }
 
@@ -358,12 +382,12 @@ pub const StderrWriter = struct {
         return .{ .writer = writer };
     }
 
-    pub fn printOnce(comptime fmt: []const u8, args: anytype) !void {
+    pub fn printOnceWithDefaultColor(comptime fmt: []const u8, args: anytype) !void {
         var stderr_buffer: [buffer_length]u8 = undefined;
         var stderr_writer = std.fs.File.stderr().writer(&stderr_buffer);
         const stderr = &stderr_writer.interface;
 
-        try TTYWriter.printTo(stderr, fmt, args);
+        try TTYWriter.printTo(stderr, "{}" ++ fmt ++ "{}", .{FormatColorSimple.Red} ++ args ++ .{Reset{}});
     }
 
     pub fn print(self: *StderrWriter, comptime fmt: []const u8, args: anytype) !void {
@@ -380,12 +404,12 @@ pub const StdoutWriter = struct {
         return .{ .writer = writer };
     }
 
-    pub fn printOnce(comptime fmt: []const u8, args: anytype) !void {
+    pub fn printOnceWithDefaultColor(comptime fmt: []const u8, args: anytype) !void {
         var stdout_buffer: [buffer_length]u8 = undefined;
         var stdout_writer = std.fs.File.stdout().writer(&stdout_buffer);
         const stdout = &stdout_writer.interface;
 
-        try TTYWriter.printTo(stdout, fmt, args);
+        try TTYWriter.printTo(stdout, "{}" ++ fmt ++ "{}", .{FormatColorSimple.Green} ++ args ++ .{Reset{}});
     }
 
     pub fn print(self: *StdoutWriter, comptime fmt: []const u8, args: anytype) !void {
@@ -395,7 +419,7 @@ pub const StdoutWriter = struct {
 
 test "style formatting" {
     { // reset
-        try std.testing.expectEqual(.reset, get_color_type(Reset{}));
+        try std.testing.expectEqual(ColorType.reset, get_color_type(Reset{}));
     }
 
     { // clear
@@ -427,5 +451,13 @@ test "style formatting" {
     { // background_color
         try std.testing.expectEqual(ColorType{ .background_color = .Blue }, get_color_type(BackgroundColor{ .background_color = .Blue }));
         try std.testing.expectEqual(null, get_color_type(.{ .background_color = .Blue }));
+    }
+
+    { // reset
+        try std.testing.expectEqual(ColorType.str_format, get_color_type(StrFormat{}));
+    }
+
+    { // other types
+        try std.testing.expectEqual(null, get_color_type("test 1"));
     }
 }
