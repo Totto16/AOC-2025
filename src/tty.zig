@@ -7,6 +7,7 @@ const ansi_clear = ansi_term.clear;
 
 pub const Style = st.Style;
 pub const Color = st.Color;
+pub const FontStyle = st.FontStyle;
 
 const assert = std.debug.assert;
 
@@ -22,19 +23,19 @@ pub const Clear = enum(u8) {
 };
 
 pub const ForegroundColor = struct {
-    color: st.Color,
+    foreground_color: Color,
 };
 pub const BackgroundColor = struct {
-    color: st.Color,
+    background_color: Color,
 };
 
 const ColorType = union(enum) {
     reset,
     clear: Clear,
-    style: st.Style,
-    font_style: st.FontStyle,
-    foreground_color: st.Color,
-    background_color: st.Color,
+    style: Style,
+    font_style: FontStyle,
+    foreground_color: Color,
+    background_color: Color,
 };
 
 fn get_color_type(value: anytype) ?ColorType {
@@ -48,31 +49,63 @@ fn get_color_type(value: anytype) ?ColorType {
         return .{ .clear = value };
     }
 
-    if (T == st.Style) {
-        return .{ .style = value };
-    }
-
     if (T == Style) {
         return .{ .style = value };
-    }
-
-    if (T == st.Color) {
-        return .{ .foreground_color = value };
     }
 
     if (T == Color) {
         return .{ .foreground_color = value };
     }
 
-    if (T == ForegroundColor) {
-        return .{ .foreground_color = value.color };
+    // Reject: Tag type (enum tag)
+    // if (comptime @typeInfo(T) == .@"enum") {
+    //     @compileError("Union tag passed, but a full union value was expected.");
+    // }
+
+    if (T == std.meta.Tag(Color)) {
+        //   const enum_val = @unionInit(Color, Color.Blue, {});
+        //  return .{ .foreground_color = enum_val };
+
+        const color_actual: ?Color = switch (@typeInfo(T)) {
+            .@"union" => value, // already a union
+            .@"enum" => blk: {
+
+                // Find the correct field in the union by its tag
+                const UInfo = @typeInfo(Color).@"union";
+                inline for (UInfo.fields) |f| {
+                    if (std.mem.eql(u8, f.name, @tagName(value))) {
+                        if (f.type == void) {
+                            // No payload
+
+                            break :blk @unionInit(Color, f.name, {});
+                        } else {
+                            @compileError("Expected enum tag for union with name " ++ f.name ++ "to have empty value, but has type: " ++ @typeName(f.type) ++ @typeName(T));
+                        }
+                    }
+                }
+
+                @compileError("Enum tag does not belong to union 'Color'");
+            },
+
+            else => @compileError("Expected Color or Color.Tag"),
+        };
+
+        return .{ .foreground_color = color_actual };
     }
+
+    // comptime if (T == std.meta.Tag(Color)) {
+    //      @compileError("error, passed union tag of Color: " ++ @typeName(T));
+    //  };
 
     if (T == BackgroundColor) {
-        return .{ .background_color = value.color };
+        return .{ .background_color = value.background_color };
     }
 
-    if (T == st.FontStyle) {
+    if (T == ForegroundColor) {
+        return .{ .foreground_color = value.foreground_color };
+    }
+
+    if (T == FontStyle) {
         return .{ .font_style = value };
     }
 
@@ -80,6 +113,64 @@ fn get_color_type(value: anytype) ?ColorType {
 }
 
 pub const print = printFunctionPrivate;
+
+fn printColor(w: *std.Io.Writer, color_type: ColorType, last_style: *?Style) !void {
+    switch (color_type) {
+        .reset => {
+            try ansi_fmt.resetStyle(w);
+        },
+        .clear => |cl| {
+            switch (cl) {
+                .current_line => try ansi_clear.clearCurrentLine(w),
+                .cursor_to_line_begin => try ansi_clear.clearFromCursorToLineBeginning(w),
+                .cursor_to_line_end => try ansi_clear.clearFromCursorToLineEnd(w),
+                .screen => try ansi_clear.clearScreen(w),
+                .cursor_to_screen_begin => try ansi_clear.clearFromCursorToScreenBeginning(w),
+                .cursor_to_screen_end => try ansi_clear.clearFromCursorToScreenEnd(w),
+            }
+        },
+        .style => |style_now| {
+            try ansi_fmt.updateStyle(w, style_now, last_style.*);
+            last_style.* = style_now;
+        },
+        .foreground_color => |color| {
+            const style_now: Style = blk: {
+                if (last_style.*) |styl| {
+                    break :blk Style{ .foreground = color, .background = styl.background, .font_style = styl.font_style };
+                } else {
+                    break :blk Style{ .foreground = color };
+                }
+            };
+
+            try ansi_fmt.updateStyle(w, style_now, last_style.*);
+            last_style.* = style_now;
+        },
+        .background_color => |color| {
+            const style_now: Style = blk: {
+                if (last_style.*) |styl| {
+                    break :blk Style{ .foreground = styl.background, .background = color, .font_style = styl.font_style };
+                } else {
+                    break :blk Style{ .background = color };
+                }
+            };
+
+            try ansi_fmt.updateStyle(w, style_now, last_style.*);
+            last_style.* = style_now;
+        },
+        .font_style => |font_styl| {
+            const style_now: Style = blk: {
+                if (last_style.*) |styl| {
+                    break :blk Style{ .foreground = styl.foreground, .background = styl.background, .font_style = font_styl };
+                } else {
+                    break :blk Style{ .font_style = font_styl };
+                }
+            };
+
+            try ansi_fmt.updateStyle(w, style_now, last_style.*);
+            last_style.* = style_now;
+        },
+    }
+}
 
 pub fn printFunctionPrivate(w: *std.Io.Writer, comptime fmt: []const u8, args: anytype) std.Io.Writer.Error!void {
     const ArgsType = @TypeOf(args);
@@ -97,7 +188,7 @@ pub fn printFunctionPrivate(w: *std.Io.Writer, comptime fmt: []const u8, args: a
     @setEvalBranchQuota(fmt.len * 1000);
     comptime var arg_state: std.fmt.ArgState = .{ .args_len = fields_info.len };
 
-    var last_style: ?st.Style = null;
+    var last_style: ?Style = null;
 
     comptime var i = 0;
     comptime var literal: []const u8 = "";
@@ -191,62 +282,10 @@ pub fn printFunctionPrivate(w: *std.Io.Writer, comptime fmt: []const u8, args: a
         const arg_to_print = comptime arg_state.nextArg(arg_pos) orelse
             @compileError("too few arguments");
 
-        if (get_color_type(@field(args, fields_info[arg_to_print].name))) |color_type| {
-            switch (color_type) {
-                .reset => {
-                    try ansi_fmt.resetStyle(w);
-                },
-                .clear => |cl| {
-                    switch (cl) {
-                        .current_line => try ansi_clear.clearCurrentLine(w),
-                        .cursor_to_line_begin => try ansi_clear.clearFromCursorToLineBeginning(w),
-                        .cursor_to_line_end => try ansi_clear.clearFromCursorToLineEnd(w),
-                        .screen => try ansi_clear.clearScreen(w),
-                        .cursor_to_screen_begin => try ansi_clear.clearFromCursorToScreenBeginning(w),
-                        .cursor_to_screen_end => try ansi_clear.clearFromCursorToScreenEnd(w),
-                    }
-                },
-                .style => |style_now| {
-                    try ansi_fmt.updateStyle(w, style_now, last_style);
-                    last_style = style_now;
-                },
-                .foreground_color => |color| {
-                    const style_now: st.Style = blk: {
-                        if (last_style) |styl| {
-                            break :blk st.Style{ .foreground = color, .background = styl.background, .font_style = styl.font_style };
-                        } else {
-                            break :blk st.Style{ .foreground = color };
-                        }
-                    };
+        const field = @field(args, fields_info[arg_to_print].name);
 
-                    try ansi_fmt.updateStyle(w, style_now, last_style);
-                    last_style = style_now;
-                },
-                .background_color => |color| {
-                    const style_now: st.Style = blk: {
-                        if (last_style) |styl| {
-                            break :blk st.Style{ .foreground = styl.background, .background = color, .font_style = styl.font_style };
-                        } else {
-                            break :blk st.Style{ .background = color };
-                        }
-                    };
-
-                    try ansi_fmt.updateStyle(w, style_now, last_style);
-                    last_style = style_now;
-                },
-                .font_style => |font_styl| {
-                    const style_now: st.Style = blk: {
-                        if (last_style) |styl| {
-                            break :blk st.Style{ .foreground = styl.foreground, .background = styl.background, .font_style = font_styl };
-                        } else {
-                            break :blk st.Style{ .font_style = font_styl };
-                        }
-                    };
-
-                    try ansi_fmt.updateStyle(w, style_now, last_style);
-                    last_style = style_now;
-                },
-            }
+        if (get_color_type(field)) |color_type| {
+            try printColor(w, color_type, &last_style);
         } else {
             try w.printValue(
                 placeholder.specifier_arg,
@@ -256,9 +295,13 @@ pub fn printFunctionPrivate(w: *std.Io.Writer, comptime fmt: []const u8, args: a
                     .width = width,
                     .precision = precision,
                 },
-                @field(args, fields_info[arg_to_print].name),
+                field,
                 std.options.fmt_max_depth,
             );
+
+            //TODO
+            //  _ = width;
+            //  _ = precision;
         }
     }
 
@@ -272,29 +315,24 @@ pub fn printFunctionPrivate(w: *std.Io.Writer, comptime fmt: []const u8, args: a
     }
 }
 
-const buffer_length: comptime_int = 4096;
+pub const buffer_length: comptime_int = 4096;
 
 const TTYWriter = struct {
-    buffer: [buffer_length]u8 = undefined,
     writer: std.fs.File.Writer,
 
-    pub fn createFromFile(file: std.fs.File) TTYWriter {
-        var result = TTYWriter{ .buffer = undefined, .writer = undefined };
-
-        result.writer = file.writer(&result.buffer);
-
-        return result;
+    pub fn createFromFile(file: std.fs.File, buffer: []u8) TTYWriter {
+        return TTYWriter{ .writer = file.writer(buffer) };
     }
 
-    fn printTo(writer: *std.Io.Writer, color: ?st.Color, comptime fmt: []const u8, args: anytype) !void {
+    fn printTo(writer: *std.Io.Writer, color: ?Color, comptime fmt: []const u8, args: anytype) !void {
         const ArgsType = @TypeOf(args);
         const args_type_info = @typeInfo(ArgsType);
         if (args_type_info != .@"struct") {
             @compileError("expected tuple or struct argument, found " ++ @typeName(ArgsType));
         }
 
-        if (color != null) {
-            return try printToImpl(writer, "{any}" ++ fmt ++ "{any}", .{color.?} ++ args ++ .{Reset{}});
+        if (color) |clr| {
+            return try printToImpl(writer, "{any}" ++ fmt ++ "{any}", .{clr} ++ args ++ .{Reset{}});
         }
 
         return try printToImpl(writer, fmt, args);
@@ -311,7 +349,7 @@ const TTYWriter = struct {
         try writer.flush();
     }
 
-    pub fn print(self: *TTYWriter, color: ?st.Color, comptime fmt: []const u8, args: anytype) !void {
+    pub fn print(self: *TTYWriter, color: ?Color, comptime fmt: []const u8, args: anytype) !void {
         const io_writer = &self.writer.interface;
         try TTYWriter.printTo(io_writer, color, fmt, args);
     }
@@ -320,8 +358,8 @@ const TTYWriter = struct {
 pub const StderrWriter = struct {
     writer: TTYWriter,
 
-    pub fn create() StderrWriter {
-        const writer = TTYWriter.createFromFile(std.fs.File.stderr());
+    pub fn create(buffer: []u8) StderrWriter {
+        const writer = TTYWriter.createFromFile(std.fs.File.stderr(), buffer);
 
         return .{ .writer = writer };
     }
@@ -331,23 +369,23 @@ pub const StderrWriter = struct {
         var stderr_writer = std.fs.File.stderr().writer(&stderr_buffer);
         const stderr = &stderr_writer.interface;
 
-        try TTYWriter.printTo(stderr, st.Color.Red, fmt, args);
+        try TTYWriter.printTo(stderr, Color.Red, fmt, args);
     }
 
-    pub fn printRaw(self: *StderrWriter, comptime fmt: []const u8, args: anytype, color: ?st.Color) !void {
+    pub fn printRaw(self: *StderrWriter, comptime fmt: []const u8, args: anytype, color: ?Color) !void {
         return self.writer.print(color, fmt, args);
     }
 
     pub fn print(self: *StderrWriter, comptime fmt: []const u8, args: anytype) !void {
-        return self.printRaw(fmt, args, st.Color.Red);
+        return self.printRaw(fmt, args, Color.Red);
     }
 };
 
 pub const StdoutWriter = struct {
     writer: TTYWriter,
 
-    pub fn create() StdoutWriter {
-        const writer = TTYWriter.createFromFile(std.fs.File.stdout());
+    pub fn create(buffer: []u8) StdoutWriter {
+        const writer = TTYWriter.createFromFile(std.fs.File.stdout(), buffer);
 
         return .{ .writer = writer };
     }
@@ -357,14 +395,51 @@ pub const StdoutWriter = struct {
         var stdout_writer = std.fs.File.stdout().writer(&stdout_buffer);
         const stdout = &stdout_writer.interface;
 
-        try TTYWriter.printTo(stdout, st.Color.Green, fmt, args);
+        try TTYWriter.printTo(stdout, Color.Green, fmt, args);
     }
 
-    pub fn printRaw(self: *StdoutWriter, comptime fmt: []const u8, args: anytype, color: ?st.Color) !void {
+    pub fn printRaw(self: *StdoutWriter, comptime fmt: []const u8, args: anytype, color: ?Color) !void {
         return self.writer.print(color, fmt, args);
     }
 
     pub fn print(self: *StdoutWriter, comptime fmt: []const u8, args: anytype) !void {
-        return self.printRaw(fmt, args, st.Color.Green);
+        return self.printRaw(fmt, args, Color.Green);
     }
 };
+
+test "style formatting" {
+    { // reset
+        try std.testing.expectEqual(.reset, get_color_type(Reset{}));
+    }
+
+    { // clear
+        try std.testing.expectEqual(ColorType{ .clear = .current_line }, get_color_type(Clear.current_line));
+        try std.testing.expectEqual(ColorType{ .clear = Clear.screen }, get_color_type(Clear.screen));
+    }
+
+    { // style
+        try std.testing.expectEqual(ColorType{ .style = Style{ .foreground = Color.Red } }, get_color_type(Style{ .foreground = Color.Red }));
+        try std.testing.expectEqual(ColorType{ .style = Style{ .foreground = .Red, .background = .Blue, .font_style = .{ .bold = true } } }, get_color_type(Style{ .foreground = .Red, .background = .Blue, .font_style = .{ .bold = true } }));
+        try std.testing.expectEqual(null, get_color_type(.{ .foreground = .Red }));
+        try std.testing.expectEqual(null, get_color_type(.{ .foreground = .Red, .background = .Blue, .font_style = .{ .bold = true } }));
+    }
+
+    { // font_style
+        try std.testing.expectEqual(ColorType{ .font_style = FontStyle{ .bold = true } }, get_color_type(FontStyle{ .bold = true }));
+        try std.testing.expectEqual(null, get_color_type(.{ .bold = true }));
+    }
+
+    { // foreground_color
+        try std.testing.expectEqual(ColorType{ .foreground_color = Color.Red }, get_color_type(Color.Red));
+        try std.testing.expectEqual(ColorType{ .foreground_color = Color.Red }, get_color_type(.Red));
+        try std.testing.expectEqual(ColorType{ .foreground_color = Color.Blue }, get_color_type(.Blue));
+        try std.testing.expectEqual(ColorType{ .foreground_color = Color.Blue }, get_color_type(ForegroundColor{ .foreground_color = .Blue }));
+        try std.testing.expectEqual(null, get_color_type(.{ .foreground_color = .Blue }));
+        try std.testing.expectEqual(ColorType{ .foreground_color = Color{ .Grey = 1 } }, get_color_type(Color{ .Grey = 1 }));
+    }
+
+    { // background_color
+        try std.testing.expectEqual(ColorType{ .foreground_color = Color.Blue }, get_color_type(BackgroundColor{ .background_color = .Blue }));
+        try std.testing.expectEqual(ColorType{ .background_color = Color.Blue }, get_color_type(.{ .background_color = .Blue }));
+    }
+}
