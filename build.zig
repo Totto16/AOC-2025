@@ -77,6 +77,8 @@ pub fn build(b: *std.Build) !void {
 
     const tty_mod = b.createModule(.{
         .root_source_file = b.path("src/tty.zig"),
+        .target = target,
+        .optimize = optimize,
     });
 
     tty_mod.addImport("ansi_term", ansi_term_dep.module("ansi_term"));
@@ -85,6 +87,8 @@ pub fn build(b: *std.Build) !void {
 
     const utils_mod = b.createModule(.{
         .root_source_file = b.path("src/utils.zig"),
+        .target = target,
+        .optimize = optimize,
     });
 
     utils_mod.addImport(tty_mod_kv.name, tty_mod_kv.module);
@@ -137,6 +141,8 @@ pub fn build(b: *std.Build) !void {
 
             const generated_module = b.createModule(.{
                 .root_source_file = b.path(generate_file_src),
+                .target = target,
+                .optimize = optimize,
             });
 
             const generated_module_kv = ModuleKV{ .module = generated_module, .name = "generated" };
@@ -207,15 +213,30 @@ pub fn build(b: *std.Build) !void {
     // Set up tests for utils.zig
     {
         const test_utils = b.step("test_utils", "Run tests in utils.zig");
-        const test_cmd = b.addTest(.{ .root_module = b.createModule(.{
-            .root_source_file = b.path("src/utils.zig"),
-            .target = target,
-            .optimize = optimize,
-        }), .test_runner = test_runner });
+        const test_cmd_utils = b.addTest(.{ .root_module = utils_mod, .test_runner = test_runner });
 
-        linkObject(b, test_cmd, &[_]ModuleKV{ utils_mod_kv, tty_mod_kv });
+        linkObject(b, test_cmd_utils, &[_]ModuleKV{ utils_mod_kv, tty_mod_kv });
 
-        test_utils.dependOn(&test_cmd.step);
-        b.installArtifact(test_cmd);
+        b.installArtifact(test_cmd_utils);
+
+        const run_test_utils = b.addRunArtifact(test_cmd_utils);
+        test_utils.dependOn(&run_test_utils.step);
+
+        test_all.dependOn(&run_test_utils.step);
+    }
+
+    // Set up tests for tty.zig
+    {
+        const test_tty = b.step("test_tty", "Run tests in tty.zig");
+        const test_cmd_tty = b.addTest(.{ .root_module = tty_mod, .test_runner = test_runner });
+
+        linkObject(b, test_cmd_tty, &[_]ModuleKV{ utils_mod_kv, tty_mod_kv });
+
+        b.installArtifact(test_cmd_tty);
+
+        const run_test_tty = b.addRunArtifact(test_cmd_tty);
+        test_tty.dependOn(&run_test_tty.step);
+
+        test_all.dependOn(&run_test_tty.step);
     }
 }
