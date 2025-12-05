@@ -51,14 +51,14 @@ fn runDay(day: utils.Day, alloc: utils.Allocator, profile: bool) !void {
 
     var progress_manager = tty.ProgressManager.init(&stdout_buffer, 1);
 
-   try progress_manager.start();
+    try progress_manager.start();
 
     var sub_manager = progress_manager.sub_manager();
 
     try day.runAdvanced(alloc, utils.DayOptions{ .profile = profile }, &sub_manager);
 
     try sub_manager.end();
-  try  progress_manager.end();
+    try progress_manager.end();
 }
 
 fn runAllDays(days: std.array_list.AlignedManaged(utils.Day, null), alloc: utils.Allocator, profile: bool) !void {
@@ -71,13 +71,9 @@ fn runAllDays(days: std.array_list.AlignedManaged(utils.Day, null), alloc: utils
         day,
     | {
         var sub_manager = progress_manager.sub_manager();
-        defer  sub_manager.end() catch @panic("End failed!");
+        defer sub_manager.end() catch @panic("End failed!");
 
-        try day.runAdvanced(
-            alloc,
-            utils.DayOptions{ .profile = profile },
-            &sub_manager
-        );
+        try day.runAdvanced(alloc, utils.DayOptions{ .profile = profile }, &sub_manager);
     }
     try progress_manager.end();
 }
