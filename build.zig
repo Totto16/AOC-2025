@@ -148,7 +148,11 @@ pub fn build(b: *std.Build) !void {
 
             const generatedName = b.fmt("day{:0>2}/generated.zig", .{day});
 
-            const file_content = b.fmt("pub const root : []const u8 = \"{s}\";\npub const num : u32 = {d};", .{ zigFileRoot, day });
+            const file_content = b.fmt(
+                \\pub const root: []const u8 = "{s}";
+                \\pub const num: u32 = {d};
+                \\
+            , .{ zigFileRoot, day });
             alloc.free(zigFileRoot);
 
             const file_generated_src = try generateFile(b, alloc, file_content, generatedName);
@@ -252,7 +256,7 @@ pub fn build(b: *std.Build) !void {
 
     { // main file
 
-        const generatedName = "main/main_helper.zig";
+        const generatedName = "main/helper.zig";
 
         var daysArr: std.array_list.AlignedManaged(u8, null) = try std.array_list.AlignedManaged(u8, null).initCapacity(alloc, 1024);
         defer daysArr.deinit();
@@ -262,13 +266,25 @@ pub fn build(b: *std.Build) !void {
                 try daysArr.appendSlice("\n");
             }
 
-            try daysArr.appendSlice(b.fmt("\ttry array.append(@import(\"day{:0>2}\").day);", .{dayObj.num}));
+            try daysArr.appendSlice(b.fmt("    try array.append(@import(\"day{:0>2}\").day);", .{dayObj.num}));
         }
 
         const daysStr: []u8 = try daysArr.toOwnedSlice();
         defer alloc.free(daysStr);
 
-        const file_content = b.fmt("const std = @import(\"std\");\nconst utils = @import(\"utils\");\n\npub fn getDays(alloc: std.mem.Allocator) !std.array_list.AlignedManaged(utils.Day, null) {{\n\tvar array : std.array_list.AlignedManaged(utils.Day, null) = try std.array_list.AlignedManaged(utils.Day, null).initCapacity(alloc, 1024);\n\n{s}\nreturn array;}}", .{daysStr});
+        const file_content = b.fmt(
+            \\const std = @import("std");
+            \\const utils = @import("utils");
+            \\
+            \\pub fn getDays(alloc: std.mem.Allocator) !std.array_list.AlignedManaged(utils.Day, null) {{
+            \\    var array: std.array_list.AlignedManaged(utils.Day, null) = try std.array_list.AlignedManaged(utils.Day, null).initCapacity(alloc, 1024);
+            \\
+            \\{s}
+            \\
+            \\    return array;
+            \\}}
+            \\
+        , .{daysStr});
 
         const file_generated_src = try generateFile(b, alloc, file_content, generatedName);
 
@@ -328,6 +344,75 @@ pub fn build(b: *std.Build) !void {
         }
 
         const run_step = b.step("run_main", "Run main");
+        run_step.dependOn(&run_cmd.step);
+
+        run_all.dependOn(&run_cmd.step);
+    }
+
+    { // test file
+
+        const generatedName = "test/helper.zig";
+
+        var daysArr: std.array_list.AlignedManaged(u8, null) = try std.array_list.AlignedManaged(u8, null).initCapacity(alloc, 1024);
+        defer daysArr.deinit();
+
+        for (days.items) |dayObj| {
+            if (daysArr.items.len != 0) {
+                try daysArr.appendSlice("\n");
+            }
+
+            try daysArr.appendSlice(b.fmt("    @import(\"day{:0>2}\");", .{dayObj.num}));
+        }
+
+        const daysStr: []u8 = try daysArr.toOwnedSlice();
+        defer alloc.free(daysStr);
+
+        const file_content = b.fmt(
+            \\const std = @import("std");
+            \\const builtin = @import("builtin");
+            \\pub fn main() !void {{
+            \\    if (!builtin.is_test) {{
+            \\        @compileError("Cannot run this outside of tests");
+            \\    }}
+            \\    return error.NotATest;
+            \\}}
+            \\test {{
+            \\{s}
+            \\}}
+        , .{daysStr});
+
+        const file_generated_src = try generateFile(b, alloc, file_content, generatedName);
+
+        const generated_module = b.createModule(.{
+            .root_source_file = file_generated_src,
+            .target = target,
+            .optimize = optimize,
+        });
+
+        for (days.items) |dayObj| {
+            generated_module.addImport(dayObj.module_kv.name, dayObj.module_kv.module);
+        }
+
+        const tests_of_days = b.addTest(.{
+            .name = "tests",
+            .root_module = generated_module,
+        });
+
+        const install_tests = b.addInstallArtifact(tests_of_days, .{});
+
+        {
+            const install_step = b.step("install_tests", "Install tests");
+            install_step.dependOn(&install_tests.step);
+            install_all.dependOn(&install_tests.step);
+        }
+
+        const run_cmd = b.addRunArtifact(tests_of_days);
+        b.installArtifact(tests_of_days);
+        if (b.args) |args| {
+            run_cmd.addArgs(args);
+        }
+
+        const run_step = b.step("run_tests", "Run tests");
         run_step.dependOn(&run_cmd.step);
 
         run_all.dependOn(&run_cmd.step);
