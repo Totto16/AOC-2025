@@ -4,7 +4,7 @@
 Welcome to my Advent of Code 2025 repository! The solutions are written in Zig. The solutions aren't optimized for speed, more for readability.
 
 ## Running the solutions
-For running the code you need [zig](https://ziglang.org/learn/getting-started/) > 0.15.2.
+For running the code you need [zig](https://ziglang.org/learn/getting-started/) >= 0.15.0.
 
 Then you can use zig to compile and than execute the solutions
 

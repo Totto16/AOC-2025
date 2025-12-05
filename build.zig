@@ -1,7 +1,7 @@
 const std = @import("std");
 const CompileStep = std.Build.Step.Compile;
 
-const required_zig_version = std.SemanticVersion.parse("0.15.2") catch unreachable;
+const required_zig_version = std.SemanticVersion.parse("0.15.0") catch unreachable;
 
 /// set this to true to link libc
 const should_link_libc = false;
