@@ -194,7 +194,7 @@ fn printColor(w: *std.Io.Writer, comptime fmt: []const u8, color_type: ColorType
         },
     }
 }
-//TODO: not supported in formatting,t o put these inside xD
+//TODO: not supported in formatting, to put these inside xD
 // see <zig>/lib/std/zig/Ast/Render.zig:769:41
 //769: doc_comment => unreachable,
 

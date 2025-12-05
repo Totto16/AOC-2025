@@ -44,8 +44,6 @@ fn parseOptions(alloc: utils.Allocator) !Options {
     return options;
 }
 
-//TODO: make the progress disableable. ans also in the test runner
-
 fn runDay(day: utils.Day, alloc: utils.Allocator, profile: bool) !void {
     var stdout_buffer: [tty.buffer_length]u8 = undefined;
 
