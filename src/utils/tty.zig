@@ -80,7 +80,6 @@ const ColorType = union(enum) {
     font_style: FontStyle,
     foreground_color: anis_st.Color,
     background_color: anis_st.Color,
-    str_format,
 };
 
 fn get_color_type(value: anytype) ?ColorType {
@@ -123,15 +122,17 @@ fn get_color_type(value: anytype) ?ColorType {
 
 pub const print = printFunctionPrivate;
 
-fn printColor(w: *std.Io.Writer, comptime fmt: []const u8, color_type: ColorType, last_style: *?Style) !void {
-    if (color_type != .str_format) {
-        switch (fmt.len) {
-            0 => {},
-            else => {
-                std.debug.print("invalid format string '{s}' for color / style like type, expect empty {{}}\n", .{fmt});
-                return error.FmtInvalid;
-            },
-        }
+fn printColor(w: *std.Io.Writer, is_tty: bool, comptime fmt: []const u8, color_type: ColorType, last_style: *?Style) !void {
+    switch (fmt.len) {
+        0 => {},
+        else => {
+            std.debug.print("invalid format string '{s}' for color / style like type, expect empty {{}}\n", .{fmt});
+            return error.FmtInvalid;
+        },
+    }
+
+    if (!is_tty) {
+        return;
     }
 
     switch (color_type) {
@@ -188,10 +189,6 @@ fn printColor(w: *std.Io.Writer, comptime fmt: []const u8, color_type: ColorType
             try ansi_fmt.updateStyle(w, style_now, last_style.*);
             last_style.* = style_now;
         },
-        .str_format => {
-            // use fmt to determine color
-
-        },
     }
 }
 //TODO: not supported in formatting, to put these inside xD
@@ -202,7 +199,7 @@ fn printColor(w: *std.Io.Writer, comptime fmt: []const u8, color_type: ColorType
 // color formatting errors
 pub const PrintError = error{ WriteFailed, FmtInvalid };
 
-pub fn printFunctionPrivate(w: *std.Io.Writer, comptime fmt: []const u8, args: anytype) PrintError!void {
+pub fn printFunctionPrivate(w: *std.Io.Writer, is_tty: bool, comptime fmt: []const u8, args: anytype) PrintError!void {
     const ArgsType = @TypeOf(args);
     const args_type_info = @typeInfo(ArgsType);
     if (args_type_info != .@"struct") {
@@ -315,7 +312,7 @@ pub fn printFunctionPrivate(w: *std.Io.Writer, comptime fmt: []const u8, args: a
         const field = @field(args, fields_info[arg_to_print].name);
 
         if (get_color_type(field)) |color_type| {
-            try printColor(w, placeholder.specifier_arg, color_type, &last_style);
+            try printColor(w, is_tty, placeholder.specifier_arg, color_type, &last_style);
         } else {
             try w.printValue(
                 placeholder.specifier_arg,
@@ -345,25 +342,26 @@ pub const buffer_length: comptime_int = 4096;
 
 const TTYWriter = struct {
     writer: std.fs.File.Writer,
+    is_tty: bool,
 
     pub fn createFromFile(file: std.fs.File, buffer: []u8) TTYWriter {
-        return TTYWriter{ .writer = file.writer(buffer) };
+        return TTYWriter{ .writer = file.writer(buffer), .is_tty = file.isTty() };
     }
 
-    fn printTo(writer: *std.Io.Writer, comptime fmt: []const u8, args: anytype) !void {
+    fn printTo(writer: *std.Io.Writer, is_tty: bool, comptime fmt: []const u8, args: anytype) !void {
         const ArgsType = @TypeOf(args);
         const args_type_info = @typeInfo(ArgsType);
         if (args_type_info != .@"struct") {
             @compileError("expected tuple or struct argument, found " ++ @typeName(ArgsType));
         }
 
-        try printFunctionPrivate(writer, fmt, args);
+        try printFunctionPrivate(writer, is_tty, fmt, args);
         try writer.flush();
     }
 
     pub fn print(self: *TTYWriter, comptime fmt: []const u8, args: anytype) !void {
         const io_writer = &self.writer.interface;
-        try TTYWriter.printTo(io_writer, fmt, args);
+        try TTYWriter.printTo(io_writer, self.is_tty, fmt, args);
     }
 };
 
@@ -378,10 +376,11 @@ pub const StderrWriter = struct {
 
     pub fn printOnceWithDefaultColor(comptime fmt: []const u8, args: anytype) !void {
         var stderr_buffer: [buffer_length]u8 = undefined;
-        var stderr_writer = std.fs.File.stderr().writer(&stderr_buffer);
+        const file = std.fs.File.stderr();
+        var stderr_writer = file.writer(&stderr_buffer);
         const stderr = &stderr_writer.interface;
 
-        try TTYWriter.printTo(stderr, "{}" ++ fmt ++ "{}", .{FormatColorSimple.Red} ++ args ++ .{Reset{}});
+        try TTYWriter.printTo(stderr, file.isTty(), "{}" ++ fmt ++ "{}", .{FormatColorSimple.Red} ++ args ++ .{Reset{}});
     }
 
     pub fn print(self: *StderrWriter, comptime fmt: []const u8, args: anytype) !void {
@@ -400,10 +399,11 @@ pub const StdoutWriter = struct {
 
     pub fn printOnceWithDefaultColor(comptime fmt: []const u8, args: anytype) !void {
         var stdout_buffer: [buffer_length]u8 = undefined;
-        var stdout_writer = std.fs.File.stdout().writer(&stdout_buffer);
+        const file = std.fs.File.stdout();
+        var stdout_writer = file.writer(&stdout_buffer);
         const stdout = &stdout_writer.interface;
 
-        try TTYWriter.printTo(stdout, "{}" ++ fmt ++ "{}", .{FormatColorSimple.Green} ++ args ++ .{Reset{}});
+        try TTYWriter.printTo(stdout, file.isTty(), "{}" ++ fmt ++ "{}", .{FormatColorSimple.Green} ++ args ++ .{Reset{}});
     }
 
     pub fn print(self: *StdoutWriter, comptime fmt: []const u8, args: anytype) !void {
@@ -442,6 +442,9 @@ const ProgressWriter = struct {
     }
 
     fn sendProgressOSC(self: *ProgressWriter, st: u8, pr: ?u8) !void {
+        if (!self.writer.file.isTty()) {
+            return;
+        }
 
         // Note. These codes may ends with ‘ESC\’ (two symbols - ESC and BackSlash) or ‘BELL’ (symbol with code \x07, same as ‘^a’ in *nix). For simplifying, endings in the following table marked as ‘ST’.
 
