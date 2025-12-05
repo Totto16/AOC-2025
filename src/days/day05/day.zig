@@ -173,41 +173,91 @@ fn getOverlapState(range1: IdRange, range2: IdRange) OverlapState {
     }
 }
 
-fn mergeRanges(ranges: *utils.ListManaged(IdRange, null)) void {
+const LoopState = union(enum) {
+    LoopStateNothing,
+    LoopStateChanged: IdRange,
+};
+
+fn mergeRanges(allocator: utils.Allocator, ranges: *utils.ListManaged(IdRange, null)) utils.SolveErrors!void {
     for (0..ranges.items.len) |i| {
         const range = ranges.items[i];
         std.debug.print("RANGE: {d} {d}\n", .{ range.first, range.last });
     }
 
-    for (0..ranges.items.len) |i| {
-        for (i + 1..ranges.items.len) |j| {
-            const range1 = &(ranges.items[i]);
-            const range2 = &(ranges.items[j]);
+    var toCompareStack: utils.ListManaged(IdRange, null) = try utils.ListManaged(IdRange, null).initCapacity(allocator, 10);
+    defer toCompareStack.deinit();
 
-            // as i walk over the list in 2 dimensions, i remove the items only at the end, megred ones are annotated like this
-            if (isDummyRange(range1.*) or isDummyRange(range2.*)) {
-                continue;
+    try toCompareStack.appendSlice(ranges.items);
+
+    var toCompareWithStack: utils.ListManaged(IdRange, null) = try utils.ListManaged(IdRange, null).initCapacity(allocator, 10);
+    defer toCompareWithStack.deinit();
+
+    try toCompareWithStack.appendSlice(ranges.items);
+
+    var result: utils.ListManaged(IdRange, null) = try utils.ListManaged(IdRange, null).initCapacity(allocator, 10);
+    defer result.deinit();
+
+    ranges.clearRetainingCapacity();
+
+    while (toCompareStack.items.len != 0) {
+        const rang = toCompareStack.pop();
+
+        if (rang) |range1| {
+            std.debug.assert(!isDummyRange(range1));
+
+            var loopState: LoopState = .LoopStateNothing;
+
+            var i: usize = 0;
+
+            mod: while (i < toCompareWithStack.items.len) : (i += 1) {
+                const range2 = toCompareWithStack.items[i];
+
+                std.debug.assert(!isDummyRange(range2));
+
+                const overlapState = getOverlapState(range1, range2);
+
+                std.debug.print("RANGE STATE: {any} {any} {any}\n", .{ range1, range2, overlapState });
+
+                switch (overlapState) {
+                    .OverlapStateNone => {},
+                    .OverlapStateIn => {
+                        // removes range2
+
+                        // in this case it could also be the sa,e as range 1
+                        _ = toCompareWithStack.swapRemove(i);
+                    },
+                    .OverlapStateEnd => {
+                        const range1mod = IdRange{ .first = range1.first, .last = range2.last };
+                        // removes range2
+                        _ = toCompareWithStack.swapRemove(i);
+
+                        loopState = .{ .LoopStateChanged = range1mod };
+                        break :mod;
+                    },
+                    .OverlapStateStart => {
+                        const range1mod = IdRange{ .first = range2.first, .last = range1.last };
+                        // removes range2
+                        _ = toCompareWithStack.swapRemove(i);
+
+                        loopState = .{ .LoopStateChanged = range1mod };
+                        break :mod;
+                    },
+                    .OverlapStateBoth => {
+                        // this removes the range, as it no longer is processed
+                        loopState = .LoopStateNothing;
+                        break :mod;
+                    },
+                }
             }
 
-            const overlapState = getOverlapState(range1.*, range2.*);
-
-            std.debug.print("RANGE STATE: {any} {any} {any}\n", .{ range1.*, range2.*, overlapState });
-
-            switch (overlapState) {
-                .OverlapStateNone => {},
-                .OverlapStateIn => {
-                    range2.* = dummyRange();
+            switch (loopState) {
+                .LoopStateNothing => {
+                    // nothing overlaps with this, just push it to the output!
+                    try result.append(range1);
                 },
-                .OverlapStateEnd => {
-                    range1.last = range2.last;
-                    range2.* = dummyRange();
-                },
-                .OverlapStateStart => {
-                    range1.first = range2.first;
-                    range2.* = dummyRange();
-                },
-                .OverlapStateBoth => {
-                    range1.* = dummyRange();
+                .LoopStateChanged => |rangemod| {
+                    // it was changed, check this range later again
+                    try toCompareStack.append(rangemod);
                 },
             }
         }
@@ -228,8 +278,8 @@ fn mergeRanges(ranges: *utils.ListManaged(IdRange, null)) void {
         }
     }
 
-    for (0..ranges.items.len) |i| {
-        const range = ranges.items[i];
+    for (0..result.items.len) |i| {
+        const range = result.items[i];
         std.debug.print("RANGE: {d} {d}\n", .{ range.first, range.last });
     }
 }
@@ -238,7 +288,7 @@ fn solveSecond(allocator: utils.Allocator, input: utils.Str) utils.SolveResult {
     var state = try parseIds(allocator, input);
     defer state.deinit();
 
-    mergeRanges(&state.ingredientRanges);
+    try mergeRanges(allocator, &state.ingredientRanges);
 
     var sum: u64 = 0;
 
