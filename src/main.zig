@@ -47,31 +47,39 @@ fn parseOptions(alloc: utils.Allocator) !Options {
 //TODO: make the progress disableable. ans also in the test runner
 
 fn runDay(day: utils.Day, alloc: utils.Allocator, profile: bool) !void {
-    const dayStr = try std.fmt.allocPrint(alloc, "AOC day {d}", .{day.num});
-    defer alloc.free(dayStr);
+    var stdout_buffer: [tty.buffer_length]u8 = undefined;
 
-    const progress_node = std.Progress.start(.{ .estimated_total_items = 1, .root_name = dayStr });
+    var progress_manager = tty.ProgressManager.init(&stdout_buffer, 1);
 
-    std.Progress.setStatus(.working);
+   try progress_manager.start();
 
-    try day.runAdvanced(alloc, utils.DayOptions{ .profile = profile }, progress_node);
+    var sub_manager = progress_manager.sub_manager();
 
-    std.Progress.setStatus(.success);
-    progress_node.end();
+    try day.runAdvanced(alloc, utils.DayOptions{ .profile = profile }, &sub_manager);
+
+    try sub_manager.end();
+  try  progress_manager.end();
 }
 
 fn runAllDays(days: std.array_list.AlignedManaged(utils.Day, null), alloc: utils.Allocator, profile: bool) !void {
-    const progress_node = std.Progress.start(.{ .estimated_total_items = days.items.len, .root_name = "all AOC days" });
+    var stdout_buffer: [tty.buffer_length]u8 = undefined;
 
-    std.Progress.setStatus(.working);
+    var progress_manager = tty.ProgressManager.init(&stdout_buffer, @intCast(days.items.len));
+
+    try progress_manager.start();
     for (days.items) |
         day,
     | {
-        try day.runAdvanced(alloc, utils.DayOptions{ .profile = profile }, progress_node);
-        progress_node.completeOne();
+        var sub_manager = progress_manager.sub_manager();
+        defer  sub_manager.end() catch @panic("End failed!");
+
+        try day.runAdvanced(
+            alloc,
+            utils.DayOptions{ .profile = profile },
+            &sub_manager
+        );
     }
-    std.Progress.setStatus(.success);
-    progress_node.end();
+    try progress_manager.end();
 }
 
 const main_helper = @import("main_helper");

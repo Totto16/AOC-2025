@@ -208,7 +208,7 @@ pub const Day = struct {
         return self.runAdvanced(allocator, null, null);
     }
 
-    pub fn runAdvanced(self: *const Day, allocator: Allocator, options: ?DayOptions, progress_node: ?std.Progress.Node) !void {
+    pub fn runAdvanced(self: *const Day, allocator: Allocator, options: ?DayOptions, progress_sub_manager: ?*tty.ProgressSubManager) !void {
         var profile: bool = false;
 
         if (options) |opt| {
@@ -217,15 +217,15 @@ pub const Day = struct {
 
         var tracker: Tracker = Tracker.init();
 
-        var sub_node: ?std.Progress.Node = null;
+        var sub_node: ?tty.ProgressNode = null;
 
-        if (progress_node) |p| {
-            const dayStr = try std.fmt.allocPrint(allocator, "run day {d}", .{self.num});
-            sub_node = p.start(dayStr, 0);
-            defer allocator.free(dayStr);
+        //TODO. collect the two things in advance, so that the progress manager knows, the amount of progress in advance
+        // also start one top level with one item ourselves, when this is null!
+        if (progress_sub_manager) |p| {
+            sub_node = p.start(0);
         }
 
-        //TODO. also allow customizations of normal file paths
+        //TODO. also allow customizations of normal file paths, refactor the day struct to have a seperate file section adn remov the old one from examples!
         {
             const file_1 = try self.getNormalFile(allocator, .first);
 
@@ -233,7 +233,7 @@ pub const Day = struct {
                 defer allocator.free(input_1);
 
                 tracker.startTiming();
-                if (sub_node) |s| s.increaseEstimatedTotalItems(1);
+                if (sub_node) |*s| try s.addItems(1);
 
                 const solution_1 = self.solve(allocator, input_1, .first) catch |err| {
                     try self.printError(.first, true, err);
@@ -244,7 +244,7 @@ pub const Day = struct {
                 if (profile) {
                     try tracker_result.display();
                 }
-                if (sub_node) |s| s.completeOne();
+                if (sub_node) |*s| try s.completeOne();
 
                 try self.printResult(.first, solution_1);
             } else {
@@ -260,7 +260,7 @@ pub const Day = struct {
                 defer allocator.free(input_2);
 
                 tracker.startTiming();
-                if (sub_node) |s| s.increaseEstimatedTotalItems(1);
+                if (sub_node) |*s| try s.addItems(1);
 
                 const solution_2 = self.solve(allocator, input_2, .second) catch |err| {
                     try self.printError(.second, true, err);
@@ -271,7 +271,7 @@ pub const Day = struct {
                 if (profile) {
                     try tracker_result.display();
                 }
-                if (sub_node) |s| s.completeOne();
+                if (sub_node) |*s| try s.completeOne();
 
                 try self.printResult(.second, solution_2);
             } else {
@@ -279,7 +279,7 @@ pub const Day = struct {
             }
         }
 
-        if (sub_node) |s| s.end();
+        if (progress_sub_manager) |s| try s.end();
     }
 
     pub fn @"test"(self: *const Day, allocator: Allocator) !void {
