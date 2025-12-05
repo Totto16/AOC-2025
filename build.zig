@@ -113,7 +113,7 @@ pub fn build(b: *std.Build) !void {
     const ansi_term_dep = b.dependency("ansi_term", .{ .target = target, .optimize = optimize });
 
     const tty_mod = b.createModule(.{
-        .root_source_file = b.path("src/tty.zig"),
+        .root_source_file = b.path("src/utils/tty.zig"),
         .target = target,
         .optimize = optimize,
     });
@@ -123,7 +123,7 @@ pub fn build(b: *std.Build) !void {
     const tty_mod_kv = ModuleKV{ .module = tty_mod, .name = "tty" };
 
     const utils_mod = b.createModule(.{
-        .root_source_file = b.path("src/utils.zig"),
+        .root_source_file = b.path("src/utils/utils.zig"),
         .target = target,
         .optimize = optimize,
     });
@@ -132,7 +132,7 @@ pub fn build(b: *std.Build) !void {
 
     const utils_mod_kv = ModuleKV{ .module = utils_mod, .name = "utils" };
 
-    const test_runner: std.Build.Step.Compile.TestRunner = std.Build.Step.Compile.TestRunner{ .path = b.path("src/test_runner.zig"), .mode = .simple };
+    const test_runner: std.Build.Step.Compile.TestRunner = std.Build.Step.Compile.TestRunner{ .path = b.path("src/utils/test_runner.zig"), .mode = .simple };
 
     var days: std.array_list.AlignedManaged(DayObj, null) = try std.array_list.AlignedManaged(DayObj, null).initCapacity(alloc, 10);
     defer days.deinit();
