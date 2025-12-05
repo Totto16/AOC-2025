@@ -361,7 +361,18 @@ pub fn build(b: *std.Build) !void {
                 try daysArr.appendSlice("\n");
             }
 
-            try daysArr.appendSlice(b.fmt("    @import(\"day{:0>2}\");", .{dayObj.num}));
+            try daysArr.appendSlice(b.fmt(
+                \\
+                \\test "day {:0>2}" {{
+                \\    var gpa = std.heap.GeneralPurposeAllocator(.{{}}){{}};
+                \\    defer _ = gpa.deinit();
+                \\
+                \\    const day = @import("day{:0>2}").day;
+                \\
+                \\    try day.@"test"(gpa.allocator());
+                \\}}
+                \\
+            , .{ dayObj.num, dayObj.num }));
         }
 
         const daysStr: []u8 = try daysArr.toOwnedSlice();
@@ -370,15 +381,13 @@ pub fn build(b: *std.Build) !void {
         const file_content = b.fmt(
             \\const std = @import("std");
             \\const builtin = @import("builtin");
-            \\pub fn main() !void {{
-            \\    if (!builtin.is_test) {{
-            \\        @compileError("Cannot run this outside of tests");
-            \\    }}
-            \\    return error.NotATest;
-            \\}}
-            \\test {{
+            \\
+            \\pub const _ = if (!builtin.is_test) {{
+            \\    @compileError("Cannot run this outside of tests");
+            \\}} else 0;
+            \\
             \\{s}
-            \\}}
+            \\
         , .{daysStr});
 
         const file_generated_src = try generateFile(b, alloc, file_content, generatedName);
@@ -393,9 +402,12 @@ pub fn build(b: *std.Build) !void {
             generated_module.addImport(dayObj.module_kv.name, dayObj.module_kv.module);
         }
 
+        generated_module.addImport(tty_mod_kv.name, tty_mod_kv.module);
+
         const tests_of_days = b.addTest(.{
             .name = "tests",
             .root_module = generated_module,
+            .test_runner = test_runner,
         });
 
         const install_tests = b.addInstallArtifact(tests_of_days, .{});
