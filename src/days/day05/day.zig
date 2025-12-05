@@ -111,18 +111,153 @@ fn solveFirst(allocator: utils.Allocator, input: utils.Str) utils.SolveResult {
     return utils.Solution{ .u64 = sum };
 }
 
-fn solveSecond(allocator: utils.Allocator, input: utils.Str) utils.SolveResult {
-    _ = allocator;
-    _ = input;
+fn isDummyRange(range: IdRange) bool {
+    return range.first > range.last;
+}
 
-    return utils.Solution{ .u64 = 0 };
+fn dummyRange() IdRange {
+    return IdRange{ .first = 1, .last = 0 };
+}
+
+const OverlapState = enum(u8) {
+    OverlapStateNone,
+    OverlapStateStart,
+    OverlapStateEnd,
+    OverlapStateBoth,
+    OverlapStateIn,
+};
+
+fn getOverlapState(range1: IdRange, range2: IdRange) OverlapState {
+
+    //as they are inclusive, a +1 is needed in some places
+
+    if (range2.last + 1 < range1.first) {
+        // range 2 is before range1
+        return .OverlapStateNone;
+    }
+
+    if (range2.first > range1.last + 1) {
+        // range 2 is after range1
+        return .OverlapStateNone;
+    }
+
+    // 2.last +1 >= 1.first an
+    // 2.last <= 1.last +1
+
+    if (range2.last <= range1.last) {
+        // the end is not overflowing
+
+        if (range2.first >= range1.first) {
+            // the start is not underflowing
+            // => it is in the range
+
+            return .OverlapStateIn;
+        } else {
+            // the start is underflowing
+            // => it overlaps at the start
+            return .OverlapStateStart;
+        }
+    } else {
+        // the end is overflowing
+
+        if (range2.first > range1.first) {
+            // the start is not underflowing
+            // => it overflowing at the end
+
+            return .OverlapStateEnd;
+        } else {
+            // the start is underflowing
+            // => it overlaps at the start AND the end
+            return .OverlapStateBoth;
+        }
+    }
+}
+
+fn mergeRanges(ranges: *utils.ListManaged(IdRange, null)) void {
+    for (0..ranges.items.len) |i| {
+        const range = ranges.items[i];
+        std.debug.print("RANGE: {d} {d}\n", .{ range.first, range.last });
+    }
+
+    for (0..ranges.items.len) |i| {
+        for (i + 1..ranges.items.len) |j| {
+            const range1 = &(ranges.items[i]);
+            const range2 = &(ranges.items[j]);
+
+            // as i walk over the list in 2 dimensions, i remove the items only at the end, megred ones are annotated like this
+            if (isDummyRange(range1.*) or isDummyRange(range2.*)) {
+                continue;
+            }
+
+            const overlapState = getOverlapState(range1.*, range2.*);
+
+            std.debug.print("RANGE STATE: {any} {any} {any}\n", .{ range1.*, range2.*, overlapState });
+
+            switch (overlapState) {
+                .OverlapStateNone => {},
+                .OverlapStateIn => {
+                    range2.* = dummyRange();
+                },
+                .OverlapStateEnd => {
+                    range1.last = range2.last;
+                    range2.* = dummyRange();
+                },
+                .OverlapStateStart => {
+                    range1.first = range2.first;
+                    range2.* = dummyRange();
+                },
+                .OverlapStateBoth => {
+                    range1.* = dummyRange();
+                },
+            }
+        }
+    }
+
+    // remove dummy ranges
+    for (0..ranges.items.len) |i| {
+
+        // as we remove, we might go out of bound
+        if (i >= ranges.items.len) {
+            break;
+        }
+
+        const range = ranges.items[i];
+
+        if (isDummyRange(range)) {
+            _ = ranges.swapRemove(i);
+        }
+    }
+
+    for (0..ranges.items.len) |i| {
+        const range = ranges.items[i];
+        std.debug.print("RANGE: {d} {d}\n", .{ range.first, range.last });
+    }
+}
+
+fn solveSecond(allocator: utils.Allocator, input: utils.Str) utils.SolveResult {
+    var state = try parseIds(allocator, input);
+    defer state.deinit();
+
+    mergeRanges(&state.ingredientRanges);
+
+    var sum: u64 = 0;
+
+    for (state.ingredientRanges.items) |ingredientRange| {
+        std.debug.print("RANGE: {d} {d}\n", .{ ingredientRange.first, ingredientRange.last });
+        std.debug.assert(!isDummyRange(ingredientRange));
+        const span = ingredientRange.last - ingredientRange.first + 1;
+
+        sum += span;
+    }
+
+    return utils.Solution{ .u64 = sum };
 }
 
 const generated = @import("generated");
 
 pub const day = utils.Day{
     .solver = utils.Solver{ .individual = .{ .first = solveFirst, .second = solveSecond } },
-    .examples = .{ .first = .{ .implemented = .{ .solution = .{ .u64 = 3 }, .real_value = .{ .u64 = 640 } } }, .second = .pending },
+    .examples = .{ .first = .{ .implemented = .{ .solution = .{ .u64 = 3 }, .real_value = .{ .u64 = 640 } } }, .second = .{ .implemented = .{ .solution = .{ .u64 = 14 } } } },
     .root = generated.root,
     .num = generated.num,
     .same_input = true,
@@ -140,4 +275,32 @@ test "day 05" {
     defer _ = gpa.deinit();
 
     try day.@"test"(gpa.allocator());
+}
+
+const ManualTest = struct {
+    range1: IdRange,
+    range2: IdRange,
+    result: OverlapState,
+};
+
+test "day 05 - manual" {
+    const tests = [_]ManualTest{
+        ManualTest{ .range1 = .{ .first = 3, .last = 5 }, .range2 = .{ .first = 10, .last = 14 }, .result = .OverlapStateNone },
+        ManualTest{ .range1 = .{ .first = 10, .last = 14 }, .range2 = .{ .first = 3, .last = 5 }, .result = .OverlapStateNone },
+
+        ManualTest{ .range1 = .{ .first = 1, .last = 5 }, .range2 = .{ .first = 2, .last = 4 }, .result = .OverlapStateIn },
+        ManualTest{ .range1 = .{ .first = 1, .last = 5 }, .range2 = .{ .first = 1, .last = 5 }, .result = .OverlapStateIn },
+
+        ManualTest{ .range1 = .{ .first = 3, .last = 5 }, .range2 = .{ .first = 2, .last = 4 }, .result = .OverlapStateStart },
+        ManualTest{ .range1 = .{ .first = 3, .last = 5 }, .range2 = .{ .first = 1, .last = 2 }, .result = .OverlapStateStart },
+
+        ManualTest{ .range1 = .{ .first = 1, .last = 6 }, .range2 = .{ .first = 5, .last = 8 }, .result = .OverlapStateEnd },
+        ManualTest{ .range1 = .{ .first = 1, .last = 5 }, .range2 = .{ .first = 5, .last = 8 }, .result = .OverlapStateEnd },
+    };
+
+    for (tests) |t| {
+        const result = getOverlapState(t.range1, t.range2);
+
+        try std.testing.expectEqual(t.result, result);
+    }
 }
