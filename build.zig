@@ -112,13 +112,19 @@ pub fn build(b: *std.Build) !void {
 
     const ansi_term_dep = b.dependency("ansi_term", .{ .target = target, .optimize = optimize });
 
+    const ansi_term_kv = ModuleKV{ .module = ansi_term_dep.module("ansi_term"), .name = "ansi_term" };
+
+    const terminal_progress_dep = b.dependency("terminal_progress", .{ .target = target, .optimize = optimize });
+
+    const terminal_progress_kv = ModuleKV{ .module = terminal_progress_dep.module("terminal_progress"), .name = "terminal_progress" };
+
     const tty_mod = b.createModule(.{
         .root_source_file = b.path("src/utils/tty.zig"),
         .target = target,
         .optimize = optimize,
     });
 
-    tty_mod.addImport("ansi_term", ansi_term_dep.module("ansi_term"));
+    tty_mod.addImport(ansi_term_kv.name, ansi_term_kv.module);
 
     const tty_mod_kv = ModuleKV{ .module = tty_mod, .name = "tty" };
 
@@ -129,6 +135,7 @@ pub fn build(b: *std.Build) !void {
     });
 
     utils_mod.addImport(tty_mod_kv.name, tty_mod_kv.module);
+    utils_mod.addImport(terminal_progress_kv.name, terminal_progress_kv.module);
 
     const utils_mod_kv = ModuleKV{ .module = utils_mod, .name = "utils" };
 
@@ -186,7 +193,7 @@ pub fn build(b: *std.Build) !void {
                 .optimize = optimize,
             }), .test_runner = test_runner });
 
-            linkObject(b, build_test, &[_]ModuleKV{ utils_mod_kv, tty_mod_kv, generated_module_kv });
+            linkObject(b, build_test, &[_]ModuleKV{ utils_mod_kv, tty_mod_kv, terminal_progress_kv, generated_module_kv });
 
             const run_test = b.addRunArtifact(build_test);
 
@@ -233,7 +240,7 @@ pub fn build(b: *std.Build) !void {
         const test_utils = b.step("test_utils", "Run tests in utils.zig");
         const test_cmd_utils = b.addTest(.{ .root_module = utils_mod, .test_runner = test_runner });
 
-        linkObject(b, test_cmd_utils, &[_]ModuleKV{ utils_mod_kv, tty_mod_kv });
+        linkObject(b, test_cmd_utils, &[_]ModuleKV{ utils_mod_kv, tty_mod_kv, terminal_progress_kv });
 
         const run_test_utils = b.addRunArtifact(test_cmd_utils);
         test_utils.dependOn(&run_test_utils.step);
@@ -246,7 +253,7 @@ pub fn build(b: *std.Build) !void {
         const test_tty = b.step("test_tty", "Run tests in tty.zig");
         const test_cmd_tty = b.addTest(.{ .root_module = tty_mod, .test_runner = test_runner });
 
-        linkObject(b, test_cmd_tty, &[_]ModuleKV{ utils_mod_kv, tty_mod_kv });
+        linkObject(b, test_cmd_tty, &[_]ModuleKV{ utils_mod_kv, tty_mod_kv, terminal_progress_kv });
 
         const run_test_tty = b.addRunArtifact(test_cmd_tty);
         test_tty.dependOn(&run_test_tty.step);
@@ -310,7 +317,7 @@ pub fn build(b: *std.Build) !void {
             }),
         });
 
-        linkObject(b, main_exe, &[_]ModuleKV{ utils_mod_kv, tty_mod_kv, generated_module_kv });
+        linkObject(b, main_exe, &[_]ModuleKV{ utils_mod_kv, tty_mod_kv, terminal_progress_kv, generated_module_kv });
 
         const install_main = b.addInstallArtifact(main_exe, .{});
 
@@ -320,7 +327,7 @@ pub fn build(b: *std.Build) !void {
             .optimize = optimize,
         }), .test_runner = test_runner });
 
-        linkObject(b, build_test, &[_]ModuleKV{ utils_mod_kv, tty_mod_kv, generated_module_kv });
+        linkObject(b, build_test, &[_]ModuleKV{ utils_mod_kv, tty_mod_kv, terminal_progress_kv, generated_module_kv });
 
         const run_test = b.addRunArtifact(build_test);
 
@@ -403,6 +410,7 @@ pub fn build(b: *std.Build) !void {
         }
 
         generated_module.addImport(tty_mod_kv.name, tty_mod_kv.module);
+        generated_module.addImport(terminal_progress_kv.name, terminal_progress_kv.module);
 
         const tests_of_days = b.addTest(.{
             .name = "tests",

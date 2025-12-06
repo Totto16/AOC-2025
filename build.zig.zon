@@ -7,7 +7,11 @@
             .url = "git+https://github.com/ziglibs/ansi_term.git#9c0f22d83605a69754e4c4f409c017c569b0b8a1",
             .hash = "ansi_term-0.1.0-_baAywpoAABEqsPmS5Jz_CddDCrG8qdIyRIESH8D2fzd",
         },
+        .terminal_progress = .{
+            .url = "https://github.com/Totto16/terminal_progress/releases/download/zig-v0.0.2/terminal_progress-zig-v0.0.2.tar.gz",
+            .hash = "terminal_progress-0.0.2-lq4vE5NDAABqQ4-oV_Vp_6SIbUDRLHKH4zaZ-fv0fGmI",
+        },
     },
-    .paths = .{ "build.zig-zon", "build.zig" },
+    .paths = .{ "build.zig.zon", "build.zig" },
     .fingerprint = 0xc4537dba87364766,
 }

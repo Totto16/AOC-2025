@@ -1,6 +1,7 @@
 const std = @import("std");
 const utils = @import("utils");
 const tty = @import("tty");
+const terminal_progress = @import("terminal_progress");
 
 const Options = struct {
     day: ?u32,
@@ -45,9 +46,9 @@ fn parseOptions(alloc: utils.Allocator) !Options {
 }
 
 fn runDay(day: utils.Day, alloc: utils.Allocator, profile: bool) !void {
-    var stdout_buffer: [tty.buffer_length]u8 = undefined;
+    var stdout_buffer: [terminal_progress.buffer_length]u8 = undefined;
 
-    var progress_manager = tty.ProgressManager.init(&stdout_buffer, 1);
+    var progress_manager = terminal_progress.ProgressManager.init(&stdout_buffer, 1);
 
     try progress_manager.start();
 
@@ -60,9 +61,9 @@ fn runDay(day: utils.Day, alloc: utils.Allocator, profile: bool) !void {
 }
 
 fn runAllDays(days: std.array_list.AlignedManaged(utils.Day, null), alloc: utils.Allocator, profile: bool) !void {
-    var stdout_buffer: [tty.buffer_length]u8 = undefined;
+    var stdout_buffer: [terminal_progress.buffer_length]u8 = undefined;
 
-    var progress_manager = tty.ProgressManager.init(&stdout_buffer, @intCast(days.items.len));
+    var progress_manager = terminal_progress.ProgressManager.init(&stdout_buffer, @intCast(days.items.len));
 
     try progress_manager.start();
     for (days.items) |

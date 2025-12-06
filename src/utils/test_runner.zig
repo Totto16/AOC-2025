@@ -8,6 +8,7 @@
 const std = @import("std");
 const builtin = @import("builtin");
 const tty = @import("tty");
+const terminal_progress = @import("terminal_progress");
 
 const BORDER = "=" ** 80;
 
@@ -81,9 +82,9 @@ pub fn main() !void {
     var skip: usize = 0;
     var leak: usize = 0;
 
-    var stdout_buffer_2: [tty.buffer_length]u8 = undefined;
+    var stdout_buffer_progress: [terminal_progress.buffer_length]u8 = undefined;
 
-    var progress_manager = tty.ProgressManager.init(&stdout_buffer_2, @intCast(builtin.test_functions.len));
+    var progress_manager = terminal_progress.ProgressManager.init(&stdout_buffer_progress, @intCast(builtin.test_functions.len));
 
     try progress_manager.start();
 

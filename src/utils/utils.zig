@@ -7,6 +7,7 @@ pub const StrMap = std.StringHashMap;
 pub const BitSet = std.DynamicBitSet;
 pub const Str = []const u8;
 const tty = @import("tty");
+const terminal_progress = @import("terminal_progress");
 
 // Add utility functions here
 
@@ -208,14 +209,14 @@ pub const Day = struct {
         return self.runAdvanced(allocator, null, null);
     }
 
-    pub fn runAdvanced(self: *const Day, allocator: Allocator, options: ?DayOptions, progress_sub_manager: ?*tty.ProgressSubManager) !void {
+    pub fn runAdvanced(self: *const Day, allocator: Allocator, options: ?DayOptions, progress_sub_manager: ?*terminal_progress.ProgressSubManager) !void {
         if (progress_sub_manager) |p| {
             try self.runImpl(allocator, options, p);
         }
 
-        var stdout_buffer: [tty.buffer_length]u8 = undefined;
+        var stdout_buffer: [terminal_progress.buffer_length]u8 = undefined;
 
-        var progress_manager = tty.ProgressManager.init(&stdout_buffer, 1);
+        var progress_manager = terminal_progress.ProgressManager.init(&stdout_buffer, 1);
 
         try progress_manager.start();
 
@@ -227,7 +228,7 @@ pub const Day = struct {
         try progress_manager.end();
     }
 
-    fn runImpl(self: *const Day, allocator: Allocator, options: ?DayOptions, progress_sub_manager: *tty.ProgressSubManager) !void {
+    fn runImpl(self: *const Day, allocator: Allocator, options: ?DayOptions, progress_sub_manager: *terminal_progress.ProgressSubManager) !void {
         var profile: bool = false;
 
         if (options) |opt| {
@@ -237,7 +238,7 @@ pub const Day = struct {
         var tracker: Tracker = Tracker.init();
 
         //TODO. collect the two things in advance, so that the progress manager knows, the amount of progress in advance
-        var sub_node: tty.ProgressNode = progress_sub_manager.start(0);
+        var sub_node: terminal_progress.ProgressNode = progress_sub_manager.start(0);
 
         //TODO. also allow customizations of normal file paths, refactor the day struct to have a seperate file section adn remov the old one from examples!
         {
