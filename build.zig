@@ -3,21 +3,12 @@ const CompileStep = std.Build.Step.Compile;
 
 const required_zig_version = std.SemanticVersion.parse("0.15.0") catch unreachable;
 
-/// set this to true to link libc
-const should_link_libc = false;
-
 const ModuleKV = struct { name: []const u8, module: *std.Build.Module };
 
-fn linkObject(b: *std.Build, obj: *CompileStep, modules: []const ModuleKV) void {
-    if (should_link_libc) obj.root_module.linkLibC();
-
-    // Add linking for packages or third party libraries here
-
+fn linkModules(obj: *CompileStep, modules: []const ModuleKV) void {
     for (modules) |module| {
         obj.root_module.addImport(module.name, module.module);
     }
-
-    _ = b;
 }
 
 fn getFileRoot(alloc: std.mem.Allocator, file: []const u8) !([]const u8) {
@@ -181,7 +172,7 @@ pub fn build(b: *std.Build) !void {
                 }),
             });
 
-            linkObject(b, day_exe, &[_]ModuleKV{ utils_mod_kv, generated_module_kv });
+            linkModules(day_exe, &[_]ModuleKV{ utils_mod_kv, generated_module_kv });
 
             try days.append(DayObj{ .num = day, .module_kv = ModuleKV{ .module = day_exe.root_module, .name = dayString } });
 
@@ -193,7 +184,7 @@ pub fn build(b: *std.Build) !void {
                 .optimize = optimize,
             }), .test_runner = test_runner });
 
-            linkObject(b, build_test, &[_]ModuleKV{ utils_mod_kv, tty_mod_kv, terminal_progress_kv, generated_module_kv });
+            linkModules(build_test, &[_]ModuleKV{ utils_mod_kv, tty_mod_kv, terminal_progress_kv, generated_module_kv });
 
             const run_test = b.addRunArtifact(build_test);
 
@@ -240,7 +231,7 @@ pub fn build(b: *std.Build) !void {
         const test_utils = b.step("test_utils", "Run tests in utils.zig");
         const test_cmd_utils = b.addTest(.{ .root_module = utils_mod, .test_runner = test_runner });
 
-        linkObject(b, test_cmd_utils, &[_]ModuleKV{ utils_mod_kv, tty_mod_kv, terminal_progress_kv });
+        linkModules(test_cmd_utils, &[_]ModuleKV{ utils_mod_kv, tty_mod_kv, terminal_progress_kv });
 
         const run_test_utils = b.addRunArtifact(test_cmd_utils);
         test_utils.dependOn(&run_test_utils.step);
@@ -253,7 +244,7 @@ pub fn build(b: *std.Build) !void {
         const test_tty = b.step("test_tty", "Run tests in tty.zig");
         const test_cmd_tty = b.addTest(.{ .root_module = tty_mod, .test_runner = test_runner });
 
-        linkObject(b, test_cmd_tty, &[_]ModuleKV{ utils_mod_kv, tty_mod_kv, terminal_progress_kv });
+        linkModules(test_cmd_tty, &[_]ModuleKV{ utils_mod_kv, tty_mod_kv, terminal_progress_kv });
 
         const run_test_tty = b.addRunArtifact(test_cmd_tty);
         test_tty.dependOn(&run_test_tty.step);
@@ -317,7 +308,7 @@ pub fn build(b: *std.Build) !void {
             }),
         });
 
-        linkObject(b, main_exe, &[_]ModuleKV{ utils_mod_kv, tty_mod_kv, terminal_progress_kv, generated_module_kv });
+        linkModules(main_exe, &[_]ModuleKV{ utils_mod_kv, tty_mod_kv, terminal_progress_kv, generated_module_kv });
 
         const install_main = b.addInstallArtifact(main_exe, .{});
 
@@ -327,7 +318,7 @@ pub fn build(b: *std.Build) !void {
             .optimize = optimize,
         }), .test_runner = test_runner });
 
-        linkObject(b, build_test, &[_]ModuleKV{ utils_mod_kv, tty_mod_kv, terminal_progress_kv, generated_module_kv });
+        linkModules(build_test, &[_]ModuleKV{ utils_mod_kv, tty_mod_kv, terminal_progress_kv, generated_module_kv });
 
         const run_test = b.addRunArtifact(build_test);
 
