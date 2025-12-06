@@ -50,7 +50,7 @@ fn parseRows(allocator: utils.Allocator, input: utils.Str) utils.SolveErrors!Row
                         break :blk Paper.Empty;
                     },
                     else => {
-                        utils.StderrWriter.printOnceWithDefaultColor("parse error: {c} was the start char", .{c}) catch {
+                        utils.StderrWriter.global().printWithDefaultColor("parse error: {c} was the start char", .{c}) catch {
                             return error.OtherError;
                         };
                         return error.ParseError;

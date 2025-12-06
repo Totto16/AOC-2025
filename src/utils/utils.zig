@@ -169,7 +169,7 @@ pub const Day = struct {
         const part = if (which == .first) "1" else "2";
         const type_ = if (is_normal) "Part" else "Example";
 
-        try StderrWriter.printOnceWithDefaultColor(day_fmt ++ " {s} {s}: {}" ++ fmt ++ "\n", getDayFmtArgs(self.num, tty.Style{ .foreground = .Red }) ++ .{ type_, part, tty.Style{ .foreground = .Red, .font_style = .{ .bold = true } } } ++ args);
+        try StderrWriter.global().printWithDefaultColor(day_fmt ++ " {s} {s}: {}" ++ fmt ++ "\n", getDayFmtArgs(self.num, tty.Style{ .foreground = .Red }) ++ .{ type_, part, tty.Style{ .foreground = .Red, .font_style = .{ .bold = true } } } ++ args);
     }
 
     fn printError(self: *const Day, which: WhichPart, is_normal: bool, err: SolveErrors) !void {
@@ -202,7 +202,7 @@ pub const Day = struct {
     fn printResult(self: *const Day, which: WhichPart, solution: Solution) !void {
         const part = if (which == .first) "1" else "2";
 
-        try StdoutWriter.printOnceWithDefaultColor(day_fmt ++ " Solution for part {}{s}{} is: {}{f}\n", getDayFmtArgs(self.num, tty.Style{ .foreground = .Green }) ++ .{ tty.Style{ .foreground = .Cyan, .font_style = .{ .bold = true } }, part, tty.Style{ .foreground = .Green }, tty.Style{ .foreground = .Magenta, .font_style = .{ .bold = true } }, solution });
+        try StdoutWriter.global().printWithDefaultColor(day_fmt ++ " Solution for part {}{s}{} is: {}{f}\n", getDayFmtArgs(self.num, tty.Style{ .foreground = .Green }) ++ .{ tty.Style{ .foreground = .Cyan, .font_style = .{ .bold = true } }, part, tty.Style{ .foreground = .Green }, tty.Style{ .foreground = .Magenta, .font_style = .{ .bold = true } }, solution });
     }
 
     pub fn run(self: *const Day, allocator: Allocator) !void {
@@ -263,7 +263,7 @@ pub const Day = struct {
 
                 try self.printResult(.first, solution_1);
             } else {
-                try StderrWriter.printOnceWithDefaultColor(day_fmt ++ " No file for part 1 found\n", getDayFmtArgs(self.num, tty.Style{ .foreground = .Red }) ++ .{});
+                try StderrWriter.global().printWithDefaultColor(day_fmt ++ " No file for part 1 found\n", getDayFmtArgs(self.num, tty.Style{ .foreground = .Red }) ++ .{});
             }
         }
 
@@ -290,7 +290,7 @@ pub const Day = struct {
 
                 try self.printResult(.second, solution_2);
             } else {
-                try StderrWriter.printOnceWithDefaultColor(day_fmt ++ " No file for part 2 found\n", getDayFmtArgs(self.num, tty.Style{ .foreground = .Red }) ++ .{});
+                try StderrWriter.global().printWithDefaultColor(day_fmt ++ " No file for part 2 found\n", getDayFmtArgs(self.num, tty.Style{ .foreground = .Red }) ++ .{});
             }
         }
 
@@ -372,7 +372,7 @@ pub const Day = struct {
 
                         try std.testing.expectEqual(real_sol, solution_1);
                     } else {
-                        try StderrWriter.printOnceWithDefaultColor(day_fmt ++ " No file for part 1 found\n", getDayFmtArgs(self.num, tty.Style{ .foreground = .Red }) ++ .{});
+                        try StderrWriter.global().printWithDefaultColor(day_fmt ++ " No file for part 1 found\n", getDayFmtArgs(self.num, tty.Style{ .foreground = .Red }) ++ .{});
                         try std.testing.expect(false);
                     }
                 }
@@ -397,7 +397,7 @@ pub const Day = struct {
 
                         try std.testing.expectEqual(real_sol, solution_2);
                     } else {
-                        try StderrWriter.printOnceWithDefaultColor(day_fmt ++ " No file for part 2 found\n", getDayFmtArgs(self.num, tty.Style{ .foreground = .Red }) ++ .{});
+                        try StderrWriter.global().printWithDefaultColor(day_fmt ++ " No file for part 2 found\n", getDayFmtArgs(self.num, tty.Style{ .foreground = .Red }) ++ .{});
                         try std.testing.expect(false);
                     }
                 }
@@ -423,7 +423,7 @@ const Tracker = struct {
         ns: u64,
         fn display(self: *const TestInfo) !void {
             const ms = @as(f64, @floatFromInt(self.ns)) / 1_000_000.0;
-            try StdoutWriter.printOnceWithDefaultColor("Took: {}{d:.2}{} ms\n", .{
+            try StdoutWriter.global().printWithDefaultColor("Took: {}{d:.2}{} ms\n", .{
                 tty.Style{ .foreground = .Cyan, .font_style = .{ .bold = true } },
                 ms,
                 tty.Style{ .foreground = .Blue },

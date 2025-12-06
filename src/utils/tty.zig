@@ -365,6 +365,22 @@ const TTYWriter = struct {
     }
 };
 
+pub const GlobalWriter = struct {
+    writer: *TTYWriter,
+
+    pub fn printWithDefaultColor(self: *GlobalWriter, comptime fmt: []const u8, args: anytype) !void {
+        try self.writer.print("{}" ++ fmt ++ "{}", .{FormatColorSimple.Green} ++ args ++ .{Reset{}});
+    }
+
+    pub fn print(self: *GlobalWriter, comptime fmt: []const u8, args: anytype) !void {
+        try self.writer.print(fmt, args);
+    }
+};
+
+var _global_stderr_buffer: [buffer_length]u8 = undefined;
+var _global_stderr_writer_impl: TTYWriter = TTYWriter{ .writer = std.fs.File.stderr().writer(&_global_stderr_buffer), .is_tty = true };
+var _global_stderr_writer: GlobalWriter = GlobalWriter{ .writer = &_global_stderr_writer_impl };
+
 pub const StderrWriter = struct {
     writer: TTYWriter,
 
@@ -374,19 +390,18 @@ pub const StderrWriter = struct {
         return .{ .writer = writer };
     }
 
-    pub fn printOnceWithDefaultColor(comptime fmt: []const u8, args: anytype) !void {
-        var stderr_buffer: [buffer_length]u8 = undefined;
-        const file = std.fs.File.stderr();
-        var stderr_writer = file.writer(&stderr_buffer);
-        const stderr = &stderr_writer.interface;
-
-        try TTYWriter.printTo(stderr, file.isTty(), "{}" ++ fmt ++ "{}", .{FormatColorSimple.Red} ++ args ++ .{Reset{}});
+    pub fn global() *GlobalWriter {
+        return &_global_stderr_writer;
     }
 
     pub fn print(self: *StderrWriter, comptime fmt: []const u8, args: anytype) !void {
         return self.writer.print(fmt, args);
     }
 };
+
+var _global_stdout_buffer: [buffer_length]u8 = undefined;
+var _global_stdout_writer_impl: TTYWriter = TTYWriter{ .writer = std.fs.File.stdout().writer(&_global_stdout_buffer), .is_tty = true };
+var _global_stdout_writer: GlobalWriter = GlobalWriter{ .writer = &_global_stdout_writer_impl };
 
 pub const StdoutWriter = struct {
     writer: TTYWriter,
@@ -397,13 +412,8 @@ pub const StdoutWriter = struct {
         return .{ .writer = writer };
     }
 
-    pub fn printOnceWithDefaultColor(comptime fmt: []const u8, args: anytype) !void {
-        var stdout_buffer: [buffer_length]u8 = undefined;
-        const file = std.fs.File.stdout();
-        var stdout_writer = file.writer(&stdout_buffer);
-        const stdout = &stdout_writer.interface;
-
-        try TTYWriter.printTo(stdout, file.isTty(), "{}" ++ fmt ++ "{}", .{FormatColorSimple.Green} ++ args ++ .{Reset{}});
+    pub fn global() *GlobalWriter {
+        return &_global_stdout_writer;
     }
 
     pub fn print(self: *StdoutWriter, comptime fmt: []const u8, args: anytype) !void {
