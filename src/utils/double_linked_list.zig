@@ -40,11 +40,8 @@ pub fn DoublyLinkedList(comptime T: type) type {
             pub fn next(self: *Iterator) ?*Node {
                 if (self.current) |node| {
                     const next_node = node.next();
-                    if (next_node) |node2| {
-                        self.current = next_node;
-                        return node2;
-                    }
-                    return null;
+                    self.current = next_node;
+                    return node;
                 }
 
                 return null;
