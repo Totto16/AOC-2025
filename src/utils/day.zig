@@ -208,38 +208,42 @@ pub const Day = struct {
         return self.getFile(allocator, .FileTypeExample, which);
     }
 
-    fn printErrorStr(self: *const Day, which: WhichPart, is_normal: bool, comptime fmt: []const u8, args: anytype) !void {
+    fn printErrorStr(which: WhichPart, is_normal: bool, num: u32, comptime fmt: []const u8, args: anytype) !void {
         const part = if (which == .first) "1" else "2";
         const type_ = if (is_normal) "Part" else "Example";
 
-        try tty.StderrWriter.global().printWithDefaultColor(day_fmt ++ " {s} {s}: {}" ++ fmt ++ "\n", getDayFmtArgs(self.num, tty.Style{ .foreground = .Red }) ++ .{ type_, part, tty.Style{ .foreground = .Red, .font_style = .{ .bold = true } } } ++ args);
+        try tty.StderrWriter.global().printWithDefaultColor(day_fmt ++ " {s} {s}: {}" ++ fmt ++ "\n", getDayFmtArgs(num, tty.Style{ .foreground = .Red }) ++ .{ type_, part, tty.Style{ .foreground = .Red, .font_style = .{ .bold = true } } } ++ args);
     }
 
-    fn printError(self: *const Day, which: WhichPart, is_normal: bool, err: SolveErrors) !void {
+    fn printErrorImpl(which: WhichPart, is_normal: bool, err: SolveErrors, num: u32) !void {
         switch (err) {
             error.PredicateNotMet => {
-                try self.printErrorStr(which, is_normal, "predicate not met", .{});
+                try Day.printErrorStr(which, is_normal, num, "predicate not met", .{});
                 return;
             },
             error.ParseError => {
-                try self.printErrorStr(which, is_normal, "parse error", .{});
+                try Day.printErrorStr(which, is_normal, num, "parse error", .{});
                 return err;
             },
             error.NotSolved => {
-                try self.printErrorStr(which, is_normal, "not solved", .{});
+                try Day.printErrorStr(which, is_normal, num, "not solved", .{});
                 return;
             },
             error.OutOfMemory => {
-                try self.printErrorStr(which, is_normal, "OutOfMemory", .{});
+                try Day.printErrorStr(which, is_normal, num, "OutOfMemory", .{});
                 return;
             },
             error.OtherError => {
-                try self.printErrorStr(which, is_normal, "other error", .{});
+                try Day.printErrorStr(which, is_normal, num, "other error", .{});
                 return;
             },
         }
 
         unreachable;
+    }
+
+    fn printError(self: *const Day, which: WhichPart, is_normal: bool, err: SolveErrors) !void {
+        return Day.printErrorImpl(which, is_normal, err, self.num);
     }
 
     fn printResult(self: *const Day, which: WhichPart, solution: Solution) !void {
@@ -344,6 +348,35 @@ pub const Day = struct {
         }
 
         try progress_sub_manager.end();
+    }
+
+    pub fn testExample(allocator: std.mem.Allocator, solveFn: SolveFn, solution: Solution, root: []const u8, file_name: []const u8) !void {
+        const file = if (std.fs.path.isAbsolute(file_name)) try allocator.dupe(u8, file_name) else try std.fs.path.join(allocator, &[_][]const u8{ root, file_name });
+        defer allocator.free(file);
+
+        std.debug.assert(std.fs.path.isAbsolute(file));
+
+        const result = readFileAbs(allocator, file) catch |err| blk: {
+            if (err != error.FileNotFound) {
+                return err;
+            }
+            break :blk null;
+        };
+
+        if (result) |input| {
+            defer allocator.free(input);
+
+            const solution_1 = solveFn(allocator, input) catch |err| {
+                try Day.printErrorImpl(.first, false, err, 0);
+                try std.testing.expect(false);
+                return;
+            };
+
+            try std.testing.expectEqual(solution, solution_1);
+        } else {
+            defer allocator.free(file_name);
+            try tty.StderrWriter.global().printWithDefaultColor(day_fmt ++ " File for example 1 not found: {s}\n", getDayFmtArgs(0, tty.Style{ .foreground = .Red }) ++ .{file_name});
+        }
     }
 
     pub fn @"test"(self: *const Day, allocator: std.mem.Allocator) !void {

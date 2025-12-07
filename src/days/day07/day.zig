@@ -226,23 +226,5 @@ test "day 07 - small" {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     defer _ = gpa.deinit();
 
-    //TODO: make this better
-    const day_small_test = utils.Day{
-        .solver = utils.Solver{ .individual = .{ .first = solveFirst, .second = solveSecond } },
-        .solutions = .{
-            .first = .pending,
-            .second = .{ .implemented = .{ .solution = .{ .u64 = 4 } } },
-        },
-        .inputs = .{ .custom = .{ .first = .{
-            .example_input = "",
-            .input = "",
-        }, .second = .{
-            .example_input = "example_small.txt",
-            .input = "",
-        } } },
-        .root = generated.root,
-        .num = generated.num,
-    };
-
-    try day_small_test.@"test"(gpa.allocator());
+    try utils.Day.testExample(gpa.allocator(), solveSecond, .{ .u64 = 4 }, generated.root, "example_small.txt");
 }
