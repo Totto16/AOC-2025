@@ -24,4 +24,5 @@ zig build test_day01 # or day<xx> or test_day<xx> etc.
 | [Day 3](https://adventofcode.com/2025/day/3) | ⭐ | ⭐ |
 | [Day 4](https://adventofcode.com/2025/day/4) | ⭐ | ⭐ |
 | [Day 5](https://adventofcode.com/2025/day/5) | ⭐ | ⭐ |
+| [Day 6](https://adventofcode.com/2025/day/6) | ⭐ |   |
 <!--- advent_readme_stars table --->
