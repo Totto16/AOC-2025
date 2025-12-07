@@ -4,7 +4,7 @@ const utils = @import("utils");
 const BatterieJolt = u8;
 
 const BatterieBank = struct {
-    inner: utils.ListManaged(BatterieJolt, null),
+    inner: utils.ListManaged(BatterieJolt),
 
     pub fn deinit(self: *const BatterieBank) void {
         self.inner.deinit();
@@ -12,7 +12,7 @@ const BatterieBank = struct {
 };
 
 const Batteries = struct {
-    inner: utils.ListManaged(BatterieBank, null),
+    inner: utils.ListManaged(BatterieBank),
 
     pub fn deinit(self: *const Batteries) void {
         for (self.inner.items) |value| {
@@ -24,7 +24,7 @@ const Batteries = struct {
 };
 
 fn parseBatteries(allocator: utils.Allocator, input: utils.Str) utils.SolveErrors!Batteries {
-    var inner: utils.ListManaged(BatterieBank, null) = try utils.ListManaged(BatterieBank, null).initCapacity(allocator, 10);
+    var inner: utils.ListManaged(BatterieBank) = utils.ListManaged(BatterieBank).init(allocator);
     errdefer inner.deinit();
 
     var iter = utils.splitSca(u8, input, '\n');
@@ -34,7 +34,7 @@ fn parseBatteries(allocator: utils.Allocator, input: utils.Str) utils.SolveError
             continue;
         }
 
-        var batteries: utils.ListManaged(BatterieJolt, null) = try utils.ListManaged(BatterieJolt, null).initCapacity(allocator, 10);
+        var batteries: utils.ListManaged(BatterieJolt) = utils.ListManaged(BatterieJolt).init(allocator);
         errdefer batteries.deinit();
 
         for (line) |c| {

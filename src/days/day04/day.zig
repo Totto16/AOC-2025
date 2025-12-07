@@ -7,7 +7,7 @@ const Paper = enum(u8) {
 };
 
 const Row = struct {
-    inner: utils.ListManaged(Paper, null),
+    inner: utils.ListManaged(Paper),
 
     pub fn deinit(self: *const Row) void {
         self.inner.deinit();
@@ -15,7 +15,7 @@ const Row = struct {
 };
 
 const Rows = struct {
-    inner: utils.ListManaged(Row, null),
+    inner: utils.ListManaged(Row),
 
     pub fn deinit(self: *const Rows) void {
         for (self.inner.items) |value| {
@@ -27,7 +27,7 @@ const Rows = struct {
 };
 
 fn parseRows(allocator: utils.Allocator, input: utils.Str) utils.SolveErrors!Rows {
-    var inner: utils.ListManaged(Row, null) = try utils.ListManaged(Row, null).initCapacity(allocator, 10);
+    var inner: utils.ListManaged(Row) = utils.ListManaged(Row).init(allocator);
     errdefer inner.deinit();
 
     var iter = utils.splitSca(u8, input, '\n');
@@ -37,7 +37,7 @@ fn parseRows(allocator: utils.Allocator, input: utils.Str) utils.SolveErrors!Row
             continue;
         }
 
-        var row: utils.ListManaged(Paper, null) = try utils.ListManaged(Paper, null).initCapacity(allocator, 10);
+        var row: utils.ListManaged(Paper) = utils.ListManaged(Paper).init(allocator);
         errdefer row.deinit();
 
         for (line) |c| {

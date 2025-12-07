@@ -1,15 +1,18 @@
 const std = @import("std");
-pub const Allocator = std.mem.Allocator;
-pub const List = std.ArrayList;
-pub const ListManaged = std.array_list.AlignedManaged;
-pub const Map = std.AutoHashMap;
-pub const StrMap = std.StringHashMap;
-pub const BitSet = std.DynamicBitSet;
-pub const Str = []const u8;
 const tty = @import("tty");
 const terminal_progress = @import("terminal_progress");
 
 // Add utility functions here
+
+pub const Allocator = std.mem.Allocator;
+pub const List = std.ArrayList;
+pub fn ListManaged(comptime T: type) type {
+    return std.array_list.AlignedManaged(T, null);
+}
+pub const Map = std.AutoHashMap;
+pub const StrMap = std.StringHashMap;
+pub const BitSet = std.DynamicBitSet;
+pub const Str = []const u8;
 
 // Useful stdlib functions
 pub const tokenizeAny = std.mem.tokenizeAny;

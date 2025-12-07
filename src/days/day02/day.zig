@@ -1,8 +1,8 @@
 const std = @import("std");
 const utils = @import("utils");
 
-fn splitIterToArray(allocator: utils.Allocator, iter: *std.mem.SplitIterator(u8, .scalar)) utils.SolveErrors!utils.ListManaged(utils.Str, null) {
-    var array: utils.ListManaged(utils.Str, null) = try utils.ListManaged(utils.Str, null).initCapacity(allocator, 10);
+fn splitIterToArray(allocator: utils.Allocator, iter: *std.mem.SplitIterator(u8, .scalar)) utils.SolveErrors!utils.ListManaged(utils.Str) {
+    var array: utils.ListManaged(utils.Str) = utils.ListManaged(utils.Str).init(allocator);
 
     while (iter.next()) |val| {
         try array.append(val);
@@ -43,8 +43,8 @@ const IdRange = struct {
     }
 };
 
-fn parseIds(allocator: utils.Allocator, input: utils.Str) utils.SolveErrors!utils.ListManaged(IdRange, null) {
-    var array: utils.ListManaged(IdRange, null) = try utils.ListManaged(IdRange, null).initCapacity(allocator, 10);
+fn parseIds(allocator: utils.Allocator, input: utils.Str) utils.SolveErrors!utils.ListManaged(IdRange) {
+    var array: utils.ListManaged(IdRange) = utils.ListManaged(IdRange).init(allocator);
     errdefer array.deinit();
 
     var iter = utils.splitSca(u8, input, '\n');

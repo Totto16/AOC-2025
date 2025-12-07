@@ -132,7 +132,7 @@ pub fn build(b: *std.Build) !void {
 
     const test_runner: std.Build.Step.Compile.TestRunner = std.Build.Step.Compile.TestRunner{ .path = b.path("src/utils/test_runner.zig"), .mode = .simple };
 
-    var days: std.array_list.AlignedManaged(DayObj, null) = try std.array_list.AlignedManaged(DayObj, null).initCapacity(alloc, 10);
+    var days: std.array_list.AlignedManaged(DayObj, null) = std.array_list.AlignedManaged(DayObj, null).init(alloc);
     defer days.deinit();
 
     // Set up a compile target for each day
@@ -256,7 +256,7 @@ pub fn build(b: *std.Build) !void {
 
         const generatedName = "main/helper.zig";
 
-        var daysArr: std.array_list.AlignedManaged(u8, null) = try std.array_list.AlignedManaged(u8, null).initCapacity(alloc, 1024);
+        var daysArr: std.array_list.AlignedManaged(u8, null) = std.array_list.AlignedManaged(u8, null).init(alloc);
         defer daysArr.deinit();
 
         for (days.items) |dayObj| {
@@ -275,7 +275,7 @@ pub fn build(b: *std.Build) !void {
             \\const utils = @import("utils");
             \\
             \\pub fn getDays(alloc: std.mem.Allocator) !std.array_list.AlignedManaged(utils.Day, null) {{
-            \\    var array: std.array_list.AlignedManaged(utils.Day, null) = try std.array_list.AlignedManaged(utils.Day, null).initCapacity(alloc, 1024);
+            \\    var array: std.array_list.AlignedManaged(utils.Day, null) = std.array_list.AlignedManaged(utils.Day, null).init(alloc);
             \\
             \\{s}
             \\
@@ -351,7 +351,7 @@ pub fn build(b: *std.Build) !void {
 
         const generatedName = "test/helper.zig";
 
-        var daysArr: std.array_list.AlignedManaged(u8, null) = try std.array_list.AlignedManaged(u8, null).initCapacity(alloc, 1024);
+        var daysArr: std.array_list.AlignedManaged(u8, null) = std.array_list.AlignedManaged(u8, null).init(alloc);
         defer daysArr.deinit();
 
         for (days.items) |dayObj| {
