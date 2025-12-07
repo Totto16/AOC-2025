@@ -103,10 +103,110 @@ fn solveFirst(allocator: utils.Allocator, input: utils.Str) utils.SolveResult {
 }
 
 fn solveSecond(allocator: utils.Allocator, input: utils.Str) utils.SolveResult {
-    _ = allocator;
-    _ = input;
+    var field = try parseField(allocator, input);
+    defer field.deinit();
 
-    return utils.Solution{ .u64 = 0 };
+    // this map store the amount of different paths there are for the current line, it is updated every line
+    var timelines_map: utils.Map(u64, u64) = utils.Map(u64, u64).init(allocator);
+    defer timelines_map.deinit();
+
+    for (field.inner.items[0].items, 0..) |item, i| {
+        if (item == .TachyonStart) {
+            try timelines_map.put(i, 1);
+        }
+    }
+
+    var timelines: u64 = 1;
+
+    var i: u64 = 0;
+
+    while (i + 1 < field.inner.items.len) : (i += 1) {
+        const line = field.inner.items[i];
+
+        const down_row = &(field.inner.items[i + 1].items);
+
+        for (line.items, 0..) |cell, x| {
+            switch (cell) {
+                .TachyonStart, .TachyonBeam => {
+                    const down = &(down_row.*[x]);
+
+                    switch (down.*) {
+                        .Space => {
+                            down.* = .TachyonBeam;
+                            // do nothing. make this field a tachyon
+                        },
+                        .TachyonBeam => {
+                            // do nothing, already a splitted tachyon
+                        },
+                        .Splitter => {
+                            const value_x: u64 = blk: {
+                                const result = timelines_map.get(x);
+                                if (result) |r| {
+                                    break :blk r;
+                                }
+                                break :blk 0;
+                            };
+
+                            if (x > 0) {
+                                const down_left = &(down_row.*[x - 1]);
+                                switch (down_left.*) {
+                                    .Space, .TachyonBeam => {
+                                        down_left.* = .TachyonBeam;
+
+                                        const value_x_left: u64 = blk: {
+                                            const result = timelines_map.get(x - 1);
+                                            if (result) |r| {
+                                                break :blk r;
+                                            }
+                                            break :blk 0;
+                                        };
+
+                                        try timelines_map.put(x - 1, value_x + value_x_left);
+                                    },
+                                    .TachyonStart, .Splitter => {
+                                        std.debug.panic("invalid cell under splitter\n", .{});
+                                    },
+                                }
+                            }
+
+                            if (x + 1 < down_row.*.len) {
+                                const down_right = &(down_row.*[x + 1]);
+
+                                switch (down_right.*) {
+                                    .Space, .TachyonBeam => {
+                                        down_right.* = .TachyonBeam;
+
+                                        const value_x_right: u64 = blk: {
+                                            const result = timelines_map.get(x + 1);
+                                            if (result) |r| {
+                                                break :blk r;
+                                            }
+                                            break :blk 0;
+                                        };
+
+                                        try timelines_map.put(x + 1, value_x + value_x_right);
+                                    },
+                                    .TachyonStart, .Splitter => {
+                                        std.debug.panic("invalid cell under splitter\n", .{});
+                                    },
+                                }
+                            }
+
+                            // this "resets" the map for the next line, as under a splitter no more tachyons can appear, this works and the is no need for a "double buffer" like map
+                            timelines += value_x;
+                            try timelines_map.put(x, 0);
+                        },
+                        .TachyonStart => {
+                            std.debug.panic("TachyonStart not at the top\n", .{});
+                        },
+                    }
+                },
+                .Space, .Splitter => {},
+            }
+        }
+    }
+
+    return utils.Solution{ .u64 = timelines };
 }
 
 const generated = @import("generated");
@@ -120,6 +220,7 @@ pub const day = utils.Day{
         } },
         .second = .{ .implemented = .{
             .solution = .{ .u64 = 40 },
+            .real_value = .{ .u64 = 12895232295789 },
         } },
     },
     .root = generated.root,
@@ -139,4 +240,22 @@ test "day 07" {
     defer _ = gpa.deinit();
 
     try day.@"test"(gpa.allocator());
+}
+
+test "day 07 - small" {
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    defer _ = gpa.deinit();
+
+    const day_small_test = utils.Day{
+        .solver = utils.Solver{ .individual = .{ .first = solveFirst, .second = solveSecond } },
+        .examples = .{
+            .first = .pending,
+            .second = .{ .implemented = .{ .solution = .{ .u64 = 4 }, .file = "example_01_small.txt" } },
+        },
+        .root = generated.root,
+        .num = generated.num,
+        .same_input = true,
+    };
+
+    try day_small_test.@"test"(gpa.allocator());
 }
