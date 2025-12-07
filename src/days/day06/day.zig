@@ -62,12 +62,16 @@ const Operation = struct {
             },
         };
     }
+};
 
-    pub fn deinitOperations(operations: *utils.ListManaged(Operation)) void {
-        for (operations.items) |*operation| {
+const Operations = struct {
+    list: utils.ListManaged(Operation),
+
+    pub fn deinit(self: *Operations) void {
+        for (self.list.items) |*operation| {
             operation.deinit();
         }
-        operations.deinit();
+        self.list.deinit();
     }
 };
 
@@ -77,9 +81,9 @@ const ParseState = enum(u8) {
     ParseStateOperations,
 };
 
-fn parseOperations(allocator: utils.Allocator, input: utils.Str) utils.SolveErrors!utils.ListManaged(Operation) {
-    var operations: utils.ListManaged(Operation) = utils.ListManaged(Operation).init(allocator);
-    errdefer Operation.deinitOperations(&operations);
+fn parseOperations(allocator: utils.Allocator, input: utils.Str) utils.SolveErrors!Operations {
+    var operations: Operations = Operations{ .list = utils.ListManaged(Operation).init(allocator) };
+    errdefer operations.deinit();
 
     var state: ParseState = .ParseStateStart;
 
@@ -108,7 +112,7 @@ fn parseOperations(allocator: utils.Allocator, input: utils.Str) utils.SolveErro
                     var list: utils.ListManaged(OperationInt) = utils.ListManaged(OperationInt).init(allocator);
                     try list.append(number);
 
-                    try operations.append(Operation{
+                    try operations.list.append(Operation{
                         .op = .OperationTypeInvalid,
                         .list = list,
                     });
@@ -134,15 +138,15 @@ fn parseOperations(allocator: utils.Allocator, input: utils.Str) utils.SolveErro
                             return error.ParseError;
                         };
 
-                        try operations.items[i].list.append(number);
+                        try operations.list.items[i].list.append(number);
                     } else {
-                        if (operations.items[i].op != .OperationTypeInvalid) {
+                        if (operations.list.items[i].op != .OperationTypeInvalid) {
                             return error.ParseError;
                         }
 
                         const op: OperationType = try OperationType.fromString(num);
 
-                        operations.items[i].op = op;
+                        operations.list.items[i].op = op;
                     }
                 }
             },
@@ -152,12 +156,12 @@ fn parseOperations(allocator: utils.Allocator, input: utils.Str) utils.SolveErro
         }
     }
 
-    for (operations.items) |item| {
+    for (operations.list.items) |item| {
         if (item.op == .OperationTypeInvalid) {
             return error.PredicateNotMet;
         }
 
-        if (item.list.items.len != operations.items[0].list.items.len) {
+        if (item.list.items.len != operations.list.items[0].list.items.len) {
             return error.PredicateNotMet;
         }
     }
@@ -167,11 +171,11 @@ fn parseOperations(allocator: utils.Allocator, input: utils.Str) utils.SolveErro
 
 fn solveFirst(allocator: utils.Allocator, input: utils.Str) utils.SolveResult {
     var operations = try parseOperations(allocator, input);
-    defer Operation.deinitOperations(&operations);
+    defer operations.deinit();
 
     var sum: u64 = 0;
 
-    for (operations.items) |operation| {
+    for (operations.list.items) |operation| {
         const result = operation.perform();
 
         sum += result;
@@ -193,9 +197,9 @@ fn splitIterToArray2(allocator: utils.Allocator, iter: *std.mem.SplitIterator(u8
     return array;
 }
 
-fn parseOperations2(allocator: utils.Allocator, input: utils.Str) utils.SolveErrors!utils.ListManaged(Operation) {
-    var operations: utils.ListManaged(Operation) = utils.ListManaged(Operation).init(allocator);
-    errdefer Operation.deinitOperations(&operations);
+fn parseOperations2(allocator: utils.Allocator, input: utils.Str) utils.SolveErrors!Operations {
+    var operations: Operations = Operations{ .list = utils.ListManaged(Operation).init(allocator) };
+    errdefer operations.deinit();
 
     var iter = utils.splitSca(u8, input, '\n');
 
@@ -245,7 +249,7 @@ fn parseOperations2(allocator: utils.Allocator, input: utils.Str) utils.SolveErr
                 return error.PredicateNotMet;
             }
 
-            try operations.append(current_op);
+            try operations.list.append(current_op);
 
             current_op = Operation{ .list = utils.ListManaged(OperationInt).init(allocator), .op = .OperationTypeInvalid };
 
@@ -278,7 +282,7 @@ fn parseOperations2(allocator: utils.Allocator, input: utils.Str) utils.SolveErr
     }
 
     if (current_op.op != .OperationTypeInvalid) {
-        try operations.append(current_op);
+        try operations.list.append(current_op);
     }
 
     return operations;
@@ -286,11 +290,11 @@ fn parseOperations2(allocator: utils.Allocator, input: utils.Str) utils.SolveErr
 
 fn solveSecond(allocator: utils.Allocator, input: utils.Str) utils.SolveResult {
     var operations = try parseOperations2(allocator, input);
-    defer Operation.deinitOperations(&operations);
+    defer operations.deinit();
 
     var sum: u64 = 0;
 
-    for (operations.items) |operation| {
+    for (operations.list.items) |operation| {
         const result = operation.perform();
 
         sum += result;
