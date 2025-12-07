@@ -76,8 +76,6 @@ fn solveFirst(allocator: utils.Allocator, input: utils.Str) utils.SolveResult {
                             if (x > 0) {
                                 const down_left = &(down_row.*[x - 1]);
                                 if (down_left.* == .Space) {
-                                    //  I read the text wrong, maybe we have to do this in part 2 ?
-                                    //        splits += 1;
                                     down_left.* = .TachyonBeam;
                                 }
                             }
@@ -85,7 +83,6 @@ fn solveFirst(allocator: utils.Allocator, input: utils.Str) utils.SolveResult {
                             if (x + 1 < down_row.*.len) {
                                 const down_right = &(down_row.*[x + 1]);
                                 if (down_right.* == .Space) {
-                                    //  splits += 1;
                                     down_right.* = .TachyonBeam;
                                 }
                             }
@@ -121,7 +118,9 @@ pub const day = utils.Day{
             .solution = .{ .u64 = 21 },
             .real_value = .{ .u64 = 1555 },
         } },
-        .second = .pending,
+        .second = .{ .implemented = .{
+            .solution = .{ .u64 = 40 },
+        } },
     },
     .root = generated.root,
     .num = generated.num,
