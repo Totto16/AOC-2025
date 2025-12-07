@@ -66,9 +66,7 @@ fn runAllDays(days: std.array_list.AlignedManaged(utils.Day, null), alloc: utils
     var progress_manager = terminal_progress.ProgressManager.init(&stdout_buffer, @intCast(days.items.len));
 
     try progress_manager.start();
-    for (days.items) |
-        day,
-    | {
+    for (days.items) |day| {
         var sub_manager = progress_manager.sub_manager();
         defer sub_manager.end() catch @panic("End failed!");
 
@@ -95,7 +93,7 @@ pub fn main() !void {
         }
 
         for (days.items) |day| {
-            if (day.num == options.day) {
+            if (day.num == got_day) {
                 try runDay(day, gpa.allocator(), options.profile);
                 return;
             }

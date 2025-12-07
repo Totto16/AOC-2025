@@ -259,6 +259,7 @@ pub const Day = struct {
     pub fn runAdvanced(self: *const Day, allocator: std.mem.Allocator, options: ?DayOptions, progress_sub_manager: ?*terminal_progress.ProgressSubManager) !void {
         if (progress_sub_manager) |p| {
             try self.runImpl(allocator, options, p);
+            return;
         }
 
         var stdout_buffer: [terminal_progress.buffer_length]u8 = undefined;
