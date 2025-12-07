@@ -107,12 +107,14 @@ fn solveSecond(allocator: utils.Allocator, input: utils.Str) utils.SolveResult {
     defer field.deinit();
 
     // this map store the amount of different paths there are for the current line, it is updated every line
-    var timelines_map: utils.Map(u64, u64) = utils.Map(u64, u64).init(allocator);
-    defer timelines_map.deinit();
+    var timelines_map: []u64 = try allocator.alloc(u64, field.inner.items[0].items.len);
+    defer allocator.free(timelines_map);
 
     for (field.inner.items[0].items, 0..) |item, i| {
         if (item == .TachyonStart) {
-            try timelines_map.put(i, 1);
+            timelines_map[i] = 1;
+        } else {
+            timelines_map[i] = 0;
         }
     }
 
@@ -139,13 +141,7 @@ fn solveSecond(allocator: utils.Allocator, input: utils.Str) utils.SolveResult {
                             // do nothing, already a splitted tachyon
                         },
                         .Splitter => {
-                            const value_x: u64 = blk: {
-                                const result = timelines_map.get(x);
-                                if (result) |r| {
-                                    break :blk r;
-                                }
-                                break :blk 0;
-                            };
+                            const value_x: u64 = timelines_map[x];
 
                             if (x > 0) {
                                 const down_left = &(down_row.*[x - 1]);
@@ -153,15 +149,7 @@ fn solveSecond(allocator: utils.Allocator, input: utils.Str) utils.SolveResult {
                                     .Space, .TachyonBeam => {
                                         down_left.* = .TachyonBeam;
 
-                                        const value_x_left: u64 = blk: {
-                                            const result = timelines_map.get(x - 1);
-                                            if (result) |r| {
-                                                break :blk r;
-                                            }
-                                            break :blk 0;
-                                        };
-
-                                        try timelines_map.put(x - 1, value_x + value_x_left);
+                                        timelines_map[x - 1] += value_x;
                                     },
                                     .TachyonStart, .Splitter => {
                                         std.debug.panic("invalid cell under splitter\n", .{});
@@ -176,15 +164,7 @@ fn solveSecond(allocator: utils.Allocator, input: utils.Str) utils.SolveResult {
                                     .Space, .TachyonBeam => {
                                         down_right.* = .TachyonBeam;
 
-                                        const value_x_right: u64 = blk: {
-                                            const result = timelines_map.get(x + 1);
-                                            if (result) |r| {
-                                                break :blk r;
-                                            }
-                                            break :blk 0;
-                                        };
-
-                                        try timelines_map.put(x + 1, value_x + value_x_right);
+                                        timelines_map[x + 1] += value_x;
                                     },
                                     .TachyonStart, .Splitter => {
                                         std.debug.panic("invalid cell under splitter\n", .{});
@@ -194,7 +174,7 @@ fn solveSecond(allocator: utils.Allocator, input: utils.Str) utils.SolveResult {
 
                             // this "resets" the map for the next line, as under a splitter no more tachyons can appear, this works and the is no need for a "double buffer" like map
                             timelines += value_x;
-                            try timelines_map.put(x, 0);
+                            timelines_map[x] = 0;
                         },
                         .TachyonStart => {
                             std.debug.panic("TachyonStart not at the top\n", .{});
