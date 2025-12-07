@@ -193,7 +193,7 @@ const generated = @import("generated");
 
 pub const day = utils.Day{
     .solver = utils.Solver{ .individual = .{ .first = solveFirst, .second = solveSecond } },
-    .examples = .{
+    .solutions = .{
         .first = .{ .implemented = .{
             .solution = .{ .u64 = 21 },
             .real_value = .{ .u64 = 1555 },
@@ -203,9 +203,9 @@ pub const day = utils.Day{
             .real_value = .{ .u64 = 12895232295789 },
         } },
     },
+    .inputs = .both_same,
     .root = generated.root,
     .num = generated.num,
-    .same_input = true,
 };
 
 pub fn main() !void {
@@ -226,15 +226,22 @@ test "day 07 - small" {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     defer _ = gpa.deinit();
 
+    //TODO: make this better
     const day_small_test = utils.Day{
         .solver = utils.Solver{ .individual = .{ .first = solveFirst, .second = solveSecond } },
-        .examples = .{
+        .solutions = .{
             .first = .pending,
-            .second = .{ .implemented = .{ .solution = .{ .u64 = 4 }, .file = "example_01_small.txt" } },
+            .second = .{ .implemented = .{ .solution = .{ .u64 = 4 } } },
         },
+        .inputs = .{ .custom = .{ .first = .{
+            .example_input = "",
+            .input = "",
+        }, .second = .{
+            .example_input = "example_small.txt",
+            .input = "",
+        } } },
         .root = generated.root,
         .num = generated.num,
-        .same_input = true,
     };
 
     try day_small_test.@"test"(gpa.allocator());

@@ -144,10 +144,16 @@ const generated = @import("generated");
 
 pub const day = utils.Day{
     .solver = utils.Solver{ .individual = .{ .first = solveFirst, .second = solveSecond } },
-    .examples = .{ .first = .{ .implemented = .{ .solution = .{ .u64 = 3 }, .real_value = .{ .u64 = 982 } } }, .second = .{ .implemented = .{ .solution = .{ .u64 = 6 }, .real_value = .{ .u64 = 6106 } } } },
+    .solutions = .{ .first = .{ .implemented = .{
+        .solution = .{ .u64 = 3 },
+        .real_value = .{ .u64 = 982 },
+    } }, .second = .{ .implemented = .{
+        .solution = .{ .u64 = 6 },
+        .real_value = .{ .u64 = 6106 },
+    } } },
+    .inputs = .both_same,
     .root = generated.root,
     .num = generated.num,
-    .same_input = true,
 };
 
 pub fn main() !void {

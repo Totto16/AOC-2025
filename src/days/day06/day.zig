@@ -307,7 +307,7 @@ const generated = @import("generated");
 
 pub const day = utils.Day{
     .solver = utils.Solver{ .individual = .{ .first = solveFirst, .second = solveSecond } },
-    .examples = .{
+    .solutions = .{
         .first = .{ .implemented = .{
             .solution = .{ .u64 = 4277556 },
             .real_value = .{ .u64 = 5595593539811 },
@@ -317,9 +317,9 @@ pub const day = utils.Day{
             .real_value = .{ .u64 = 10153315705125 },
         } },
     },
+    .inputs = .both_same,
     .root = generated.root,
     .num = generated.num,
-    .same_input = true,
 };
 
 pub fn main() !void {

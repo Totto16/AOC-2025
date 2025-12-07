@@ -27,24 +27,49 @@ pub const SolveResult = SolveErrors!Solution;
 
 const SolveFn = *const fn (allocator: std.mem.Allocator, input: []const u8) SolveResult;
 
+const SolveFnBoth = *const fn (allocator: std.mem.Allocator, input: []const u8, which: WhichPart) SolveResult;
+
 const IndividualSolver = struct {
     first: SolveFn,
     second: SolveFn,
 };
 
-pub const Solver = union(enum) { both: SolveFn, individual: IndividualSolver };
+pub const Solver = union(enum) { both: SolveFnBoth, individual: IndividualSolver };
 
-pub const Example = struct {
+pub const Solutions = struct {
     solution: Solution,
-    file: ?[]const u8 = null,
     real_value: ?Solution = null,
 };
 
-pub const ExampleWrapper = union(enum) { pending, implemented: Example };
+pub const SolutionsWrapper = union(enum) { pending, implemented: Solutions };
 
-pub const Examples = struct { first: ExampleWrapper, second: ExampleWrapper };
+pub const BothSolutions = struct { first: SolutionsWrapper, second: SolutionsWrapper };
 
-const WhichPart = enum(u1) { first = 0, second = 1 };
+pub const SingleCustomInput = struct {
+    input: []const u8,
+    example_input: []const u8,
+};
+
+pub const CustomInputs = struct {
+    first: SingleCustomInput,
+    second: SingleCustomInput,
+};
+
+pub const Inputs = union(enum) {
+    default,
+    both_same,
+    custom: CustomInputs,
+};
+
+pub const WhichPart = enum(u1) {
+    first = 0,
+    second = 1,
+};
+
+const FileType = enum(u1) {
+    FileTypeNormal,
+    FileTypeExample,
+};
 
 const day_fmt = "{}[Day {}{d}{}]{}";
 
@@ -54,20 +79,25 @@ fn getDayFmtArgs(day: u32, style_after: tty.Style) struct { tty.FormatColorSimpl
     return .{ day_color, tty.FormatColorSimple.Cyan, day, day_color, style_after };
 }
 
+const FileGetResult = union(enum) {
+    found: []const u8,
+    not_found: []const u8,
+};
+
 pub const DayOptions = struct {
     profile: bool = false,
 };
 
 pub const Day = struct {
     solver: Solver,
-    examples: Examples,
+    solutions: BothSolutions,
+    inputs: Inputs,
     root: []const u8,
     num: u32,
-    same_input: bool = false,
 
     fn solve(self: *const Day, allocator: std.mem.Allocator, input: []const u8, which: WhichPart) !Solution {
         switch (self.solver) {
-            .both => |f| return f(allocator, input),
+            .both => |func| return func(allocator, input, which),
             .individual => |individual| {
                 switch (which) {
                     .first => return individual.first(allocator, input),
@@ -77,11 +107,11 @@ pub const Day = struct {
         }
     }
 
-    fn getExample(example: ExampleWrapper) ?Example {
+    fn getSolutions(example: SolutionsWrapper) ?Solutions {
         switch (example) {
             .pending => return null,
-            .implemented => |i| {
-                return i;
+            .implemented => |sol| {
+                return sol;
             },
         }
     }
@@ -98,8 +128,45 @@ pub const Day = struct {
         return try reader.allocRemaining(allocator, .unlimited);
     }
 
-    fn getExampleFileName(self: *const Day, allocator: std.mem.Allocator, example: Example, which: WhichPart) ![]const u8 {
-        const file_name: []const u8 = if (example.file) |f| f else (if (which == .first) "example_01.txt" else "example_02.txt");
+    fn getFileName(self: *const Day, allocator: std.mem.Allocator, file_type: FileType, which: WhichPart) ![]const u8 {
+        const file_name = blk: {
+            switch (self.inputs) {
+                .default => {
+                    switch (file_type) {
+                        .FileTypeNormal => {
+                            const file_name: []const u8 = if (which == .first) "input_01.txt" else "input_02.txt";
+                            break :blk file_name;
+                        },
+                        .FileTypeExample => {
+                            const file_name: []const u8 = if (which == .first) "example_01.txt" else "example_02.txt";
+                            break :blk file_name;
+                        },
+                    }
+                },
+                .both_same => {
+                    switch (file_type) {
+                        .FileTypeNormal => {
+                            break :blk "input.txt";
+                        },
+                        .FileTypeExample => {
+                            break :blk "example.txt";
+                        },
+                    }
+                },
+                .custom => |custom_inp| {
+                    switch (file_type) {
+                        .FileTypeNormal => {
+                            const file_name: []const u8 = if (which == .first) custom_inp.first.input else custom_inp.second.input;
+                            break :blk file_name;
+                        },
+                        .FileTypeExample => {
+                            const file_name: []const u8 = if (which == .first) custom_inp.first.example_input else custom_inp.second.example_input;
+                            break :blk file_name;
+                        },
+                    }
+                },
+            }
+        };
 
         const file = if (std.fs.path.isAbsolute(file_name)) try allocator.dupe(u8, file_name) else try std.fs.path.join(allocator, &[_][]const u8{ self.root, file_name });
 
@@ -108,8 +175,9 @@ pub const Day = struct {
         return file;
     }
 
-    fn getNormalFile(self: *const Day, allocator: std.mem.Allocator, which: WhichPart) !?[]const u8 {
-        const file_name: []const u8 = if (which == .first) "input_01.txt" else "input_02.txt";
+    fn getFile(self: *const Day, allocator: std.mem.Allocator, file_type: FileType, which: WhichPart) !FileGetResult {
+        const file_name = try self.getFileName(allocator, file_type, which);
+        errdefer allocator.free(file_name);
 
         const file = if (std.fs.path.isAbsolute(file_name)) try allocator.dupe(u8, file_name) else try std.fs.path.join(allocator, &[_][]const u8{ self.root, file_name });
         defer allocator.free(file);
@@ -123,7 +191,21 @@ pub const Day = struct {
             break :blk null;
         };
 
-        return result;
+        if (result) |r| {
+            allocator.free(file_name);
+
+            return FileGetResult{ .found = r };
+        } else {
+            return FileGetResult{ .not_found = file_name };
+        }
+    }
+
+    fn getNormalFile(self: *const Day, allocator: std.mem.Allocator, which: WhichPart) !FileGetResult {
+        return self.getFile(allocator, .FileTypeNormal, which);
+    }
+
+    fn getExampleFile(self: *const Day, allocator: std.mem.Allocator, which: WhichPart) !FileGetResult {
+        return self.getFile(allocator, .FileTypeExample, which);
     }
 
     fn printErrorStr(self: *const Day, which: WhichPart, is_normal: bool, comptime fmt: []const u8, args: anytype) !void {
@@ -201,57 +283,63 @@ pub const Day = struct {
         //TODO. collect the two things in advance, so that the progress manager knows, the amount of progress in advance
         var sub_node: terminal_progress.ProgressNode = progress_sub_manager.start(0);
 
-        //TODO. also allow customizations of normal file paths, refactor the day struct to have a seperate file section adn remov the old one from examples!
         {
             const file_1 = try self.getNormalFile(allocator, .first);
 
-            if (file_1) |input_1| {
-                defer allocator.free(input_1);
+            switch (file_1) {
+                .found => |input_1| {
+                    defer allocator.free(input_1);
 
-                tracker.startTiming();
-                try sub_node.addItems(1);
+                    tracker.startTiming();
+                    try sub_node.addItems(1);
 
-                const solution_1 = self.solve(allocator, input_1, .first) catch |err| {
-                    try self.printError(.first, true, err);
-                    return;
-                };
+                    const solution_1 = self.solve(allocator, input_1, .first) catch |err| {
+                        try self.printError(.first, true, err);
+                        return;
+                    };
 
-                const tracker_result = tracker.endTiming();
-                if (profile) {
-                    try tracker_result.display();
-                }
-                try sub_node.completeOne();
+                    const tracker_result = tracker.endTiming();
+                    if (profile) {
+                        try tracker_result.display();
+                    }
+                    try sub_node.completeOne();
 
-                try self.printResult(.first, solution_1);
-            } else {
-                try tty.StderrWriter.global().printWithDefaultColor(day_fmt ++ " No file for part 1 found\n", getDayFmtArgs(self.num, tty.Style{ .foreground = .Red }) ++ .{});
+                    try self.printResult(.first, solution_1);
+                },
+                .not_found => |file_name| {
+                    defer allocator.free(file_name);
+                    try tty.StderrWriter.global().printWithDefaultColor(day_fmt ++ " File for part 1 not found: {s}\n", getDayFmtArgs(self.num, tty.Style{ .foreground = .Red }) ++ .{file_name});
+                },
             }
         }
 
         {
-            const which_one: WhichPart = if (self.same_input) .first else .second;
-            const file_2 = try self.getNormalFile(allocator, which_one);
+            const file_2 = try self.getNormalFile(allocator, .second);
 
-            if (file_2) |input_2| {
-                defer allocator.free(input_2);
+            switch (file_2) {
+                .found => |input_2| {
+                    defer allocator.free(input_2);
 
-                tracker.startTiming();
-                try sub_node.addItems(1);
+                    tracker.startTiming();
+                    try sub_node.addItems(1);
 
-                const solution_2 = self.solve(allocator, input_2, .second) catch |err| {
-                    try self.printError(.second, true, err);
-                    return;
-                };
+                    const solution_2 = self.solve(allocator, input_2, .second) catch |err| {
+                        try self.printError(.second, true, err);
+                        return;
+                    };
 
-                const tracker_result = tracker.endTiming();
-                if (profile) {
-                    try tracker_result.display();
-                }
-                try sub_node.completeOne();
+                    const tracker_result = tracker.endTiming();
+                    if (profile) {
+                        try tracker_result.display();
+                    }
+                    try sub_node.completeOne();
 
-                try self.printResult(.second, solution_2);
-            } else {
-                try tty.StderrWriter.global().printWithDefaultColor(day_fmt ++ " No file for part 2 found\n", getDayFmtArgs(self.num, tty.Style{ .foreground = .Red }) ++ .{});
+                    try self.printResult(.second, solution_2);
+                },
+                .not_found => |file_name| {
+                    defer allocator.free(file_name);
+                    try tty.StderrWriter.global().printWithDefaultColor(day_fmt ++ " File for part 2 not found: {s}\n", getDayFmtArgs(self.num, tty.Style{ .foreground = .Red }) ++ .{file_name});
+                },
             }
         }
 
@@ -260,69 +348,12 @@ pub const Day = struct {
 
     pub fn @"test"(self: *const Day, allocator: std.mem.Allocator) !void {
         {
-            const example_1 = Day.getExample(self.examples.first);
+            const solutions_1m = Day.getSolutions(self.solutions.first);
 
-            if (example_1) |ex1| {
-                const file_1 = try self.getExampleFileName(allocator, ex1, .first);
-                defer allocator.free(file_1);
-
-                const input_1 = readFileAbs(allocator, file_1) catch |err| {
-                    if (err == error.FileNotFound) {
-                        try self.printErrorStr(.first, false, "File not found: '{s}'", .{file_1});
-                        try std.testing.expect(false);
-                        return;
-                    }
-                    return err;
-                };
-                defer allocator.free(input_1);
-
-                const solution_1 = self.solve(allocator, input_1, .first) catch |err| {
-                    try self.printError(.first, false, err);
-                    try std.testing.expect(false);
-                    return;
-                };
-
-                try std.testing.expectEqual(ex1.solution, solution_1);
-            }
-        }
-
-        {
-            const example_2 = Day.getExample(self.examples.second);
-
-            if (example_2) |ex2| {
-                const which_one: WhichPart = if (self.same_input) .first else .second;
-                const file_2 = try self.getExampleFileName(allocator, ex2, which_one);
-                defer allocator.free(file_2);
-
-                const input_2 = readFileAbs(allocator, file_2) catch |err| {
-                    if (err == error.FileNotFound) {
-                        try self.printErrorStr(.second, false, "File not found: '{s}'", .{file_2});
-                        try std.testing.expect(false);
-                        return;
-                    }
-                    return err;
-                };
-                defer allocator.free(input_2);
-
-                const solution_2 = self.solve(allocator, input_2, .second) catch |err| {
-                    try self.printError(.second, false, err);
-                    try std.testing.expect(false);
-                    return;
-                };
-
-                try std.testing.expectEqual(ex2.solution, solution_2);
-            }
-        }
-
-        // "real" solutions, to test everything again!
-
-        {
-            const example_1 = Day.getExample(self.examples.first);
-
-            if (example_1) |ex1| {
-                if (ex1.real_value) |real_sol| {
-                    const file_1 = try self.getNormalFile(allocator, .first);
-                    if (file_1) |input_1| {
+            if (solutions_1m) |solutions_1| {
+                const file_1 = try self.getExampleFile(allocator, .first);
+                switch (file_1) {
+                    .found => |input_1| {
                         defer allocator.free(input_1);
 
                         const solution_1 = self.solve(allocator, input_1, .first) catch |err| {
@@ -331,23 +362,23 @@ pub const Day = struct {
                             return;
                         };
 
-                        try std.testing.expectEqual(real_sol, solution_1);
-                    } else {
-                        try tty.StderrWriter.global().printWithDefaultColor(day_fmt ++ " No file for part 1 found\n", getDayFmtArgs(self.num, tty.Style{ .foreground = .Red }) ++ .{});
-                        try std.testing.expect(false);
-                    }
+                        try std.testing.expectEqual(solutions_1.solution, solution_1);
+                    },
+                    .not_found => |file_name| {
+                        defer allocator.free(file_name);
+                        try tty.StderrWriter.global().printWithDefaultColor(day_fmt ++ " File for example 1 not found: {s}\n", getDayFmtArgs(self.num, tty.Style{ .foreground = .Red }) ++ .{file_name});
+                    },
                 }
             }
         }
 
         {
-            const example_2 = Day.getExample(self.examples.second);
+            const solutions_2m = Day.getSolutions(self.solutions.second);
 
-            if (example_2) |ex2| {
-                if (ex2.real_value) |real_sol| {
-                    const which_one: WhichPart = if (self.same_input) .first else .second;
-                    const file_2 = try self.getNormalFile(allocator, which_one);
-                    if (file_2) |input_2| {
+            if (solutions_2m) |solutions_2| {
+                const file_2 = try self.getExampleFile(allocator, .second);
+                switch (file_2) {
+                    .found => |input_2| {
                         defer allocator.free(input_2);
 
                         const solution_2 = self.solve(allocator, input_2, .second) catch |err| {
@@ -356,10 +387,67 @@ pub const Day = struct {
                             return;
                         };
 
-                        try std.testing.expectEqual(real_sol, solution_2);
-                    } else {
-                        try tty.StderrWriter.global().printWithDefaultColor(day_fmt ++ " No file for part 2 found\n", getDayFmtArgs(self.num, tty.Style{ .foreground = .Red }) ++ .{});
-                        try std.testing.expect(false);
+                        try std.testing.expectEqual(solutions_2.solution, solution_2);
+                    },
+                    .not_found => |file_name| {
+                        defer allocator.free(file_name);
+                        try tty.StderrWriter.global().printWithDefaultColor(day_fmt ++ " File for example 2 not found: {s}\n", getDayFmtArgs(self.num, tty.Style{ .foreground = .Red }) ++ .{file_name});
+                    },
+                }
+            }
+        }
+
+        // "real" solutions, to test everything again!
+
+        {
+            const solutions_1m = Day.getSolutions(self.solutions.first);
+
+            if (solutions_1m) |solutions_1| {
+                if (solutions_1.real_value) |real_sol| {
+                    const file_1 = try self.getNormalFile(allocator, .first);
+                    switch (file_1) {
+                        .found => |input_1| {
+                            defer allocator.free(input_1);
+
+                            const solution_1 = self.solve(allocator, input_1, .first) catch |err| {
+                                try self.printError(.first, false, err);
+                                try std.testing.expect(false);
+                                return;
+                            };
+
+                            try std.testing.expectEqual(real_sol, solution_1);
+                        },
+                        .not_found => |file_name| {
+                            defer allocator.free(file_name);
+                            try tty.StderrWriter.global().printWithDefaultColor(day_fmt ++ " File for part 1 not found: {s}\n", getDayFmtArgs(self.num, tty.Style{ .foreground = .Red }) ++ .{file_name});
+                        },
+                    }
+                }
+            }
+        }
+
+        {
+            const solutions_2m = Day.getSolutions(self.solutions.second);
+
+            if (solutions_2m) |solutions_2| {
+                if (solutions_2.real_value) |real_sol| {
+                    const file_2 = try self.getNormalFile(allocator, .second);
+                    switch (file_2) {
+                        .found => |input_2| {
+                            defer allocator.free(input_2);
+
+                            const solution_2 = self.solve(allocator, input_2, .second) catch |err| {
+                                try self.printError(.second, false, err);
+                                try std.testing.expect(false);
+                                return;
+                            };
+
+                            try std.testing.expectEqual(real_sol, solution_2);
+                        },
+                        .not_found => |file_name| {
+                            defer allocator.free(file_name);
+                            try tty.StderrWriter.global().printWithDefaultColor(day_fmt ++ " File for part 2 not found: {s}\n", getDayFmtArgs(self.num, tty.Style{ .foreground = .Red }) ++ .{file_name});
+                        },
                     }
                 }
             }
