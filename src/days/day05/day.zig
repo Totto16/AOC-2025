@@ -1,8 +1,8 @@
 const std = @import("std");
 const utils = @import("utils");
 
-fn splitIterToArray(allocator: utils.Allocator, iter: *std.mem.SplitIterator(u8, .scalar)) utils.SolveErrors!utils.ListManaged(utils.Str, null) {
-    var array: utils.ListManaged(utils.Str, null) = try utils.ListManaged(utils.Str, null).initCapacity(allocator, 10);
+fn splitIterToArray(allocator: utils.Allocator, iter: *std.mem.SplitIterator(u8, .scalar)) utils.SolveErrors!utils.ListManaged(utils.Str) {
+    var array: utils.ListManaged(utils.Str) = utils.ListManaged(utils.Str).init(allocator);
 
     while (iter.next()) |val| {
         try array.append(val);
@@ -15,7 +15,7 @@ const RangeInt = u64;
 
 const IdRange = struct {
     first: RangeInt,
-    last: RangeInt,
+    last_exclusive: RangeInt,
 
     pub fn fromStr(allocator: utils.Allocator, str: utils.Str) utils.SolveErrors!IdRange {
         if (str.len == 0) {
@@ -39,13 +39,21 @@ const IdRange = struct {
             return error.ParseError;
         };
 
-        return IdRange{ .first = first, .last = last };
+        return IdRange{ .first = first, .last_exclusive = last + 1 };
+    }
+
+    pub fn eq(self: IdRange, second: IdRange) bool {
+        if (self.first != second.first) {
+            return false;
+        }
+
+        return self.last_exclusive == second.last_exclusive;
     }
 };
 
 const ParsedState = struct {
-    ingredientRanges: utils.ListManaged(IdRange, null),
-    ingredients: utils.ListManaged(RangeInt, null),
+    ingredientRanges: utils.ListManaged(IdRange),
+    ingredients: utils.ListManaged(RangeInt),
 
     pub fn deinit(self: *ParsedState) void {
         self.ingredientRanges.deinit();
@@ -54,10 +62,10 @@ const ParsedState = struct {
 };
 
 fn parseIds(allocator: utils.Allocator, input: utils.Str) utils.SolveErrors!ParsedState {
-    var ingredientRanges: utils.ListManaged(IdRange, null) = try utils.ListManaged(IdRange, null).initCapacity(allocator, 10);
+    var ingredientRanges: utils.ListManaged(IdRange) = utils.ListManaged(IdRange).init(allocator);
     errdefer ingredientRanges.deinit();
 
-    var ingredients: utils.ListManaged(RangeInt, null) = try utils.ListManaged(RangeInt, null).initCapacity(allocator, 10);
+    var ingredients: utils.ListManaged(RangeInt) = utils.ListManaged(RangeInt).init(allocator);
     errdefer ingredients.deinit();
 
     var iter = utils.splitSca(u8, input, '\n');
@@ -84,9 +92,9 @@ fn parseIds(allocator: utils.Allocator, input: utils.Str) utils.SolveErrors!Pars
     return ParsedState{ .ingredientRanges = ingredientRanges, .ingredients = ingredients };
 }
 
-fn isIngredientFresh(list: utils.ListManaged(IdRange, null), value: RangeInt) bool {
+fn isIngredientFresh(list: utils.ListManaged(IdRange), value: RangeInt) bool {
     for (list.items) |range| {
-        if (value >= range.first and value <= range.last) {
+        if (value >= range.first and value <= range.last_exclusive) {
             return true;
         }
     }
@@ -121,22 +129,22 @@ const OverlapState = enum(u8) {
 
 fn getOverlapState(range1: IdRange, range2: IdRange) OverlapState {
 
-    //as they are inclusive, a +1 is needed in some places
+    //as they are inclusive, ais needed in some places
 
-    if (range2.last + 1 < range1.first) {
+    if (range2.last_exclusive <= range1.first) {
         // range 2 is before range1
         return .OverlapStateNone;
     }
 
-    if (range2.first > range1.last + 1) {
+    if (range2.first >= range1.last_exclusive) {
         // range 2 is after range1
         return .OverlapStateNone;
     }
 
-    // 2.last +1 >= 1.first an
-    // 2.last <= 1.last +1
+    // 2.last_exclusive > 1.first
+    // 2.first < 1.last_exclusive
 
-    if (range2.last <= range1.last) {
+    if (range2.last_exclusive <= range1.last_exclusive) {
         // the end is not overflowing
 
         if (range2.first >= range1.first) {
@@ -169,73 +177,129 @@ const LoopState = union(enum) {
     LoopStateNothing,
     LoopStateChanged: IdRange,
     LoopStateRemoved,
+    LoopStateReiterate,
 };
 
-fn mergeRanges(allocator: utils.Allocator, ranges: *utils.ListManaged(IdRange, null)) utils.SolveErrors!void {
-    var toCompareStack: utils.ListManaged(IdRange, null) = try utils.ListManaged(IdRange, null).initCapacity(allocator, 10);
+fn mergeRanges(allocator: utils.Allocator, ranges: *utils.ListManaged(IdRange)) utils.SolveErrors!void {
+    var toCompareStack: utils.StackManaged(IdRange) = utils.StackManaged(IdRange).init(allocator);
     defer toCompareStack.deinit();
 
     try toCompareStack.appendSlice(ranges.items);
 
-    var result: utils.ListManaged(IdRange, null) = try utils.ListManaged(IdRange, null).initCapacity(allocator, 10);
+    var result: utils.ListManaged(IdRange) = utils.ListManaged(IdRange).init(allocator);
     defer result.deinit();
 
     ranges.clearRetainingCapacity();
 
-    while (toCompareStack.items.len != 0) {
-        const rang = toCompareStack.pop();
+    while (!toCompareStack.empty()) {
+        const rang = toCompareStack.popFirst();
 
         if (rang) |range1| {
             var loopState: LoopState = .LoopStateNothing;
 
-            var i: usize = 0;
+            var it = toCompareStack.iter();
 
-            mod: while (i < toCompareStack.items.len) : (i += 1) {
-                const range2 = toCompareStack.items[i];
+            const track = range1.eq(IdRange{ .first = 242604971118812, .last_exclusive = 244329586655722 });
 
+            if (track) {
+                std.debug.print("TRACK HERE\n", .{});
+            }
+
+            modified: while (it.next()) |range2_node| {
+                const range2 = range2_node.value;
                 const overlapState = getOverlapState(range1, range2);
+
+                if (track) {
+                    std.debug.print("TRACKER COMP: {any} {any} {any}\n", .{ range1, range2, overlapState });
+                }
 
                 switch (overlapState) {
                     .OverlapStateNone => {},
                     .OverlapStateIn => {
                         // removes range2, as this is a unnecessary range
-                        _ = toCompareStack.swapRemove(i);
+                        toCompareStack.remove(range2_node);
+                        // this invalidates it, so redo this, by adding range1 to the stack again
+
+                        std.debug.assert(range1.first <= range2.first);
+                        std.debug.assert(range1.last_exclusive >= range2.last_exclusive);
+
+                        loopState = .LoopStateReiterate;
+                        break :modified;
                     },
                     .OverlapStateEnd => {
-                        const range1mod = IdRange{ .first = range1.first, .last = range2.last };
+                        const range1mod = IdRange{ .first = range1.first, .last_exclusive = range2.last_exclusive };
                         // removes range2, as this is a unnecessary range
-                        _ = toCompareStack.swapRemove(i);
+                        toCompareStack.remove(range2_node);
+
+                        std.debug.assert(range1.first <= range2.first);
+                        std.debug.assert(range1.last_exclusive <= range2.last_exclusive);
 
                         loopState = .{ .LoopStateChanged = range1mod };
-                        break :mod;
+                        break :modified;
                     },
                     .OverlapStateStart => {
-                        const range1mod = IdRange{ .first = range2.first, .last = range1.last };
+                        const range1mod = IdRange{ .first = range2.first, .last_exclusive = range1.last_exclusive };
                         // removes range2, as this is a unnecessary range
-                        _ = toCompareStack.swapRemove(i);
+                        toCompareStack.remove(range2_node);
+
+                        std.debug.assert(range1.first >= range2.first);
+                        std.debug.assert(range1.last_exclusive >= range2.last_exclusive);
 
                         loopState = .{ .LoopStateChanged = range1mod };
-                        break :mod;
+                        break :modified;
                     },
                     .OverlapStateBoth => {
                         // this removes the range, as it no longer is processed
+
+                        std.debug.assert(range1.first >= range2.first);
+                        std.debug.assert(range1.last_exclusive <= range2.last_exclusive);
+
                         loopState = .LoopStateRemoved;
-                        break :mod;
+                        break :modified;
                     },
                 }
             }
 
             switch (loopState) {
+                .LoopStateReiterate => {
+                    try toCompareStack.append(range1);
+                },
                 .LoopStateNothing => {
-                    // nothing overlaps with this, just push it to the output!
-                    try result.append(range1);
+                    std.debug.print("ADD RESULT RANGE {any}\n", .{range1});
+
+                    var has_overlap: bool = false;
+
+                    for (result.items) |result_range| {
+                        const overlapState = getOverlapState(result_range, range1);
+
+                        if (overlapState != .OverlapStateNone) {
+                            std.debug.print("overlapping results: {any} {any} {any}\n", .{ range1, result_range, overlapState });
+                            //NOTE: this shouldn't ever occur!
+                            //TODO: fix this, as this is unreachable :(
+
+                            has_overlap = true;
+                            break;
+                        }
+                    }
+
+                    if (has_overlap) {
+                        try toCompareStack.append(range1);
+
+                        try toCompareStack.appendSlice(result.items);
+                        result.clearRetainingCapacity();
+                    } else {
+                        // nothing overlaps with this, just push it to the output!
+                        try result.append(range1);
+                    }
                 },
                 .LoopStateChanged => |rangemod| {
                     // it was changed, check this range later again
                     try toCompareStack.append(rangemod);
+                    std.debug.print("ADD MODIFIED RANGE {any}\n", .{rangemod});
                 },
                 .LoopStateRemoved => {
                     //do nothing discards the range
+                    std.debug.print("REMOVED RANGE {any}\n", .{range1});
                 },
             }
         }
@@ -252,11 +316,18 @@ fn solveSecond(allocator: utils.Allocator, input: utils.Str) utils.SolveResult {
 
     var sum: u64 = 0;
 
+    sortRange(&state.ingredientRanges.items);
+
+    std.debug.print("ERROR\n", .{});
+
     for (state.ingredientRanges.items) |ingredientRange| {
-        const span = ingredientRange.last - ingredientRange.first + 1;
+        std.debug.print("RANGE: {} {}\n", .{ ingredientRange.first, ingredientRange.last_exclusive });
+        const span = ingredientRange.last_exclusive - ingredientRange.first;
 
         sum += span;
     }
+
+    std.debug.print("{d}\n", .{sum});
 
     return utils.Solution{ .u64 = sum };
 }
@@ -265,7 +336,15 @@ const generated = @import("generated");
 
 pub const day = utils.Day{
     .solver = utils.Solver{ .individual = .{ .first = solveFirst, .second = solveSecond } },
-    .examples = .{ .first = .{ .implemented = .{ .solution = .{ .u64 = 3 }, .real_value = .{ .u64 = 640 } } }, .second = .{ .implemented = .{ .solution = .{ .u64 = 14 } } } },
+    .examples = .{
+        .first = .{ .implemented = .{ .solution = .{ .u64 = 3 }, .real_value = .{ .u64 = 640 } } },
+        .second = .{
+            .implemented = .{
+                .solution = .{ .u64 = 14 },
+                .real_value = .{ .u64 = 365804144481581 },
+            },
+        },
+    },
     .root = generated.root,
     .num = generated.num,
     .same_input = true,
@@ -293,17 +372,20 @@ const ManualTest = struct {
 
 test "day 05 - manual" {
     const tests = [_]ManualTest{
-        ManualTest{ .range1 = .{ .first = 3, .last = 5 }, .range2 = .{ .first = 10, .last = 14 }, .result = .OverlapStateNone },
-        ManualTest{ .range1 = .{ .first = 10, .last = 14 }, .range2 = .{ .first = 3, .last = 5 }, .result = .OverlapStateNone },
+        ManualTest{ .range1 = .{ .first = 3, .last_exclusive = 6 }, .range2 = .{ .first = 10, .last_exclusive = 15 }, .result = .OverlapStateNone },
+        ManualTest{ .range1 = .{ .first = 10, .last_exclusive = 15 }, .range2 = .{ .first = 3, .last_exclusive = 6 }, .result = .OverlapStateNone },
 
-        ManualTest{ .range1 = .{ .first = 1, .last = 5 }, .range2 = .{ .first = 2, .last = 4 }, .result = .OverlapStateIn },
-        ManualTest{ .range1 = .{ .first = 1, .last = 5 }, .range2 = .{ .first = 1, .last = 5 }, .result = .OverlapStateIn },
+        ManualTest{ .range1 = .{ .first = 1, .last_exclusive = 6 }, .range2 = .{ .first = 2, .last_exclusive = 5 }, .result = .OverlapStateIn },
+        ManualTest{ .range1 = .{ .first = 1, .last_exclusive = 6 }, .range2 = .{ .first = 1, .last_exclusive = 6 }, .result = .OverlapStateIn },
 
-        ManualTest{ .range1 = .{ .first = 3, .last = 5 }, .range2 = .{ .first = 2, .last = 4 }, .result = .OverlapStateStart },
-        ManualTest{ .range1 = .{ .first = 3, .last = 5 }, .range2 = .{ .first = 1, .last = 2 }, .result = .OverlapStateStart },
+        ManualTest{ .range1 = .{ .first = 3, .last_exclusive = 6 }, .range2 = .{ .first = 2, .last_exclusive = 5 }, .result = .OverlapStateStart },
+        ManualTest{ .range1 = .{ .first = 3, .last_exclusive = 6 }, .range2 = .{ .first = 1, .last_exclusive = 4 }, .result = .OverlapStateStart },
 
-        ManualTest{ .range1 = .{ .first = 1, .last = 6 }, .range2 = .{ .first = 5, .last = 8 }, .result = .OverlapStateEnd },
-        ManualTest{ .range1 = .{ .first = 1, .last = 5 }, .range2 = .{ .first = 5, .last = 8 }, .result = .OverlapStateEnd },
+        ManualTest{ .range1 = .{ .first = 1, .last_exclusive = 7 }, .range2 = .{ .first = 5, .last_exclusive = 9 }, .result = .OverlapStateEnd },
+        ManualTest{ .range1 = .{ .first = 1, .last_exclusive = 6 }, .range2 = .{ .first = 5, .last_exclusive = 9 }, .result = .OverlapStateEnd },
+
+        ManualTest{ .range1 = IdRange{ .first = 205, .last_exclusive = 206 }, .range2 = IdRange{ .first = 206, .last_exclusive = 210 }, .result = .OverlapStateNone },
+        ManualTest{ .range1 = IdRange{ .first = 206, .last_exclusive = 210 }, .range2 = IdRange{ .first = 205, .last_exclusive = 206 }, .result = .OverlapStateNone },
     };
 
     for (tests) |t| {
@@ -311,4 +393,77 @@ test "day 05 - manual" {
 
         try std.testing.expectEqual(t.result, result);
     }
+}
+fn cmpRange(ctx: void, a: IdRange, b: IdRange) bool {
+    if (a.first == b.first) {
+        return std.sort.asc(RangeInt)(ctx, a.last_exclusive, b.last_exclusive);
+    }
+    return std.sort.asc(RangeInt)(ctx, a.first, b.first);
+}
+
+fn sortRange(ranges: *[]IdRange) void {
+    std.sort.insertion(IdRange, ranges.*, {}, cmpRange);
+}
+
+test "day 05 - manual advanced" {
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    defer _ = gpa.deinit();
+
+    const input =
+        \\1-5
+        \\2-17
+        \\13-34
+        \\45-76
+        \\78-103
+        \\104-156
+        \\107-165
+        \\102-121
+        \\205-205
+        \\206-209
+        \\
+    ;
+
+    var values = try parseIds(gpa.allocator(), input);
+    defer values.deinit();
+
+    try mergeRanges(gpa.allocator(), &values.ingredientRanges);
+
+    var expected_mut = [_]IdRange{
+        IdRange{ .first = 1, .last_exclusive = 35 },
+        IdRange{ .first = 45, .last_exclusive = 77 },
+        IdRange{ .first = 78, .last_exclusive = 166 },
+        IdRange{ .first = 205, .last_exclusive = 206 },
+        IdRange{ .first = 206, .last_exclusive = 210 },
+    };
+    const expected: []IdRange = &expected_mut;
+
+    sortRange(&values.ingredientRanges.items);
+
+    try std.testing.expectEqualSlices(IdRange, expected, values.ingredientRanges.items);
+}
+
+test "day 05 - edge case" {
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    defer _ = gpa.deinit();
+
+    const input =
+        \\328188028014249-328648944286494
+        \\327646151858731-328188028014249
+        \\327788252572518-328188028014249
+        \\
+    ;
+
+    var values = try parseIds(gpa.allocator(), input);
+    defer values.deinit();
+
+    try mergeRanges(gpa.allocator(), &values.ingredientRanges);
+
+    var expected_mut = [_]IdRange{
+        IdRange{ .first = 327646151858731, .last_exclusive = 328648944286495 },
+    };
+    const expected: []IdRange = &expected_mut;
+
+    sortRange(&values.ingredientRanges.items);
+
+    try std.testing.expectEqualSlices(IdRange, expected, values.ingredientRanges.items);
 }
