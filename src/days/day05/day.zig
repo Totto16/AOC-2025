@@ -160,7 +160,7 @@ fn getOverlapState(range1: IdRange, range2: IdRange) OverlapState {
     } else {
         // the end is overflowing
 
-        if (range2.first > range1.first) {
+        if (range2.first >= range1.first) {
             // the start is not underflowing
             // => it overflowing at the end
 
@@ -199,19 +199,9 @@ fn mergeRanges(allocator: utils.Allocator, ranges: *utils.ListManaged(IdRange)) 
 
             var it = toCompareStack.iter();
 
-            const track = range1.eq(IdRange{ .first = 242604971118812, .last_exclusive = 244329586655722 });
-
-            if (track) {
-                std.debug.print("TRACK HERE\n", .{});
-            }
-
             modified: while (it.next()) |range2_node| {
                 const range2 = range2_node.value;
                 const overlapState = getOverlapState(range1, range2);
-
-                if (track) {
-                    std.debug.print("TRACKER COMP: {any} {any} {any}\n", .{ range1, range2, overlapState });
-                }
 
                 switch (overlapState) {
                     .OverlapStateNone => {},
@@ -265,41 +255,16 @@ fn mergeRanges(allocator: utils.Allocator, ranges: *utils.ListManaged(IdRange)) 
                     try toCompareStack.append(range1);
                 },
                 .LoopStateNothing => {
-                    std.debug.print("ADD RESULT RANGE {any}\n", .{range1});
 
-                    var has_overlap: bool = false;
-
-                    for (result.items) |result_range| {
-                        const overlapState = getOverlapState(result_range, range1);
-
-                        if (overlapState != .OverlapStateNone) {
-                            std.debug.print("overlapping results: {any} {any} {any}\n", .{ range1, result_range, overlapState });
-                            //NOTE: this shouldn't ever occur!
-                            //TODO: fix this, as this is unreachable :(
-
-                            has_overlap = true;
-                            break;
-                        }
-                    }
-
-                    if (has_overlap) {
-                        try toCompareStack.append(range1);
-
-                        try toCompareStack.appendSlice(result.items);
-                        result.clearRetainingCapacity();
-                    } else {
-                        // nothing overlaps with this, just push it to the output!
-                        try result.append(range1);
-                    }
+                    // nothing overlaps with this, just push it to the output!
+                    try result.append(range1);
                 },
                 .LoopStateChanged => |rangemod| {
                     // it was changed, check this range later again
                     try toCompareStack.append(rangemod);
-                    std.debug.print("ADD MODIFIED RANGE {any}\n", .{rangemod});
                 },
                 .LoopStateRemoved => {
                     //do nothing discards the range
-                    std.debug.print("REMOVED RANGE {any}\n", .{range1});
                 },
             }
         }
@@ -318,16 +283,11 @@ fn solveSecond(allocator: utils.Allocator, input: utils.Str) utils.SolveResult {
 
     sortRange(&state.ingredientRanges.items);
 
-    std.debug.print("ERROR\n", .{});
-
     for (state.ingredientRanges.items) |ingredientRange| {
-        std.debug.print("RANGE: {} {}\n", .{ ingredientRange.first, ingredientRange.last_exclusive });
         const span = ingredientRange.last_exclusive - ingredientRange.first;
 
         sum += span;
     }
-
-    std.debug.print("{d}\n", .{sum});
 
     return utils.Solution{ .u64 = sum };
 }
@@ -386,6 +346,10 @@ test "day 05 - manual" {
 
         ManualTest{ .range1 = IdRange{ .first = 205, .last_exclusive = 206 }, .range2 = IdRange{ .first = 206, .last_exclusive = 210 }, .result = .OverlapStateNone },
         ManualTest{ .range1 = IdRange{ .first = 206, .last_exclusive = 210 }, .range2 = IdRange{ .first = 205, .last_exclusive = 206 }, .result = .OverlapStateNone },
+
+        ManualTest{ .range1 = .{ .first = 1, .last_exclusive = 6 }, .range2 = .{ .first = 1, .last_exclusive = 9 }, .result = .OverlapStateEnd },
+        ManualTest{ .range1 = .{ .first = 2, .last_exclusive = 6 }, .range2 = .{ .first = 1, .last_exclusive = 9 }, .result = .OverlapStateBoth },
+        ManualTest{ .range1 = .{ .first = 1, .last_exclusive = 9 }, .range2 = .{ .first = 1, .last_exclusive = 6 }, .result = .OverlapStateIn },
     };
 
     for (tests) |t| {
