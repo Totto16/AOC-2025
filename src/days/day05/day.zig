@@ -361,6 +361,7 @@ test "day 05 - manual" {
         try std.testing.expectEqual(t.result, result);
     }
 }
+
 fn cmpRange(ctx: void, a: IdRange, b: IdRange) bool {
     if (a.first == b.first) {
         return std.sort.asc(RangeInt)(ctx, a.last_exclusive, b.last_exclusive);

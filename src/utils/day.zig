@@ -25,9 +25,9 @@ pub const SolveErrors = error{ PredicateNotMet, ParseError, NotSolved, OutOfMemo
 
 pub const SolveResult = SolveErrors!Solution;
 
-const SolveFn = *const fn (allocator: std.mem.Allocator, input: []const u8) SolveResult;
+const SolveFn = *const fn (allocator: std.mem.Allocator, input: []const u8, category: SolveCategory) SolveResult;
 
-const SolveFnBoth = *const fn (allocator: std.mem.Allocator, input: []const u8, which: WhichPart) SolveResult;
+const SolveFnBoth = *const fn (allocator: std.mem.Allocator, input: []const u8, which: WhichPart, category: SolveCategory) SolveResult;
 
 const IndividualSolver = struct {
     first: SolveFn,
@@ -66,6 +66,11 @@ pub const WhichPart = enum(u1) {
     second = 1,
 };
 
+pub const SolveCategory = enum(u1) {
+    example = 0,
+    normal = 1,
+};
+
 const FileType = enum(u1) {
     FileTypeNormal,
     FileTypeExample,
@@ -95,13 +100,13 @@ pub const Day = struct {
     root: []const u8,
     num: u32,
 
-    fn solve(self: *const Day, allocator: std.mem.Allocator, input: []const u8, which: WhichPart) !Solution {
+    fn solve(self: *const Day, allocator: std.mem.Allocator, input: []const u8, which: WhichPart, category: SolveCategory) !Solution {
         switch (self.solver) {
-            .both => |func| return func(allocator, input, which),
+            .both => |func| return func(allocator, input, which, category),
             .individual => |individual| {
                 switch (which) {
-                    .first => return individual.first(allocator, input),
-                    .second => return individual.second(allocator, input),
+                    .first => return individual.first(allocator, input, category),
+                    .second => return individual.second(allocator, input, category),
                 }
             },
         }
@@ -298,7 +303,7 @@ pub const Day = struct {
                     tracker.startTiming();
                     try sub_node.addItems(1);
 
-                    const solution_1 = self.solve(allocator, input_1, .first) catch |err| {
+                    const solution_1 = self.solve(allocator, input_1, .first, .normal) catch |err| {
                         try self.printError(.first, true, err);
                         return;
                     };
@@ -328,7 +333,7 @@ pub const Day = struct {
                     tracker.startTiming();
                     try sub_node.addItems(1);
 
-                    const solution_2 = self.solve(allocator, input_2, .second) catch |err| {
+                    const solution_2 = self.solve(allocator, input_2, .second, .normal) catch |err| {
                         try self.printError(.second, true, err);
                         return;
                     };
@@ -390,7 +395,7 @@ pub const Day = struct {
                     .found => |input_1| {
                         defer allocator.free(input_1);
 
-                        const solution_1 = self.solve(allocator, input_1, .first) catch |err| {
+                        const solution_1 = self.solve(allocator, input_1, .first, .example) catch |err| {
                             try self.printError(.first, false, err);
                             try std.testing.expect(false);
                             return;
@@ -415,7 +420,7 @@ pub const Day = struct {
                     .found => |input_2| {
                         defer allocator.free(input_2);
 
-                        const solution_2 = self.solve(allocator, input_2, .second) catch |err| {
+                        const solution_2 = self.solve(allocator, input_2, .second, .example) catch |err| {
                             try self.printError(.second, false, err);
                             try std.testing.expect(false);
                             return;
@@ -443,7 +448,7 @@ pub const Day = struct {
                         .found => |input_1| {
                             defer allocator.free(input_1);
 
-                            const solution_1 = self.solve(allocator, input_1, .first) catch |err| {
+                            const solution_1 = self.solve(allocator, input_1, .first, .normal) catch |err| {
                                 try self.printError(.first, false, err);
                                 try std.testing.expect(false);
                                 return;
@@ -470,7 +475,7 @@ pub const Day = struct {
                         .found => |input_2| {
                             defer allocator.free(input_2);
 
-                            const solution_2 = self.solve(allocator, input_2, .second) catch |err| {
+                            const solution_2 = self.solve(allocator, input_2, .second, .normal) catch |err| {
                                 try self.printError(.second, false, err);
                                 try std.testing.expect(false);
                                 return;

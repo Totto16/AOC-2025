@@ -51,5 +51,6 @@ pub const SolveResult = day.SolveResult;
 pub const SolveErrors = day.SolveErrors;
 pub const Solution = day.Solution;
 pub const DayOptions = day.DayOptions;
+pub const SolveCategory = day.SolveCategory;
 
 pub const StackManaged = stack.StackManaged;
