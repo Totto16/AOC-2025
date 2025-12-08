@@ -364,13 +364,13 @@ test "day 05 - manual" {
 
 fn cmpRange(ctx: void, a: IdRange, b: IdRange) bool {
     if (a.first == b.first) {
-        return std.sort.asc(RangeInt)(ctx, a.last_exclusive, b.last_exclusive);
+        return utils.asc(RangeInt)(ctx, a.last_exclusive, b.last_exclusive);
     }
-    return std.sort.asc(RangeInt)(ctx, a.first, b.first);
+    return utils.asc(RangeInt)(ctx, a.first, b.first);
 }
 
 fn sortRange(ranges: *[]IdRange) void {
-    std.sort.insertion(IdRange, ranges.*, {}, cmpRange);
+    utils.sort(IdRange, ranges.*, {}, cmpRange);
 }
 
 test "day 05 - manual advanced" {

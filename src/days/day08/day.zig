@@ -76,11 +76,11 @@ const DistanceStruct = struct {
 };
 
 fn cmpDistance(ctx: void, a: DistanceStruct, b: DistanceStruct) bool {
-    return std.sort.asc(DistanceNum)(ctx, a.distance, b.distance);
+    return utils.asc(DistanceNum)(ctx, a.distance, b.distance);
 }
 
 fn cmpAmount(ctx: void, a: utils.ListManaged(usize), b: utils.ListManaged(usize)) bool {
-    return std.sort.desc(usize)(ctx, a.items.len, b.items.len);
+    return utils.desc(usize)(ctx, a.items.len, b.items.len);
 }
 
 const CircuitMap = struct {
@@ -109,16 +109,16 @@ const CircuitMap = struct {
     }
 
     pub fn sort(self: *CircuitMap) void {
-        std.sort.insertion(utils.ListManaged(usize), self.circuitList.items, {}, cmpAmount);
+        utils.sort(utils.ListManaged(usize), self.circuitList.items, {}, cmpAmount);
     }
 
-    pub fn connect(self: *CircuitMap, idx1: usize, idx2: usize) !void {
+    pub fn connect(self: *CircuitMap, idx1: usize, idx2: usize) !bool {
         const circuitIdx1 = self.map.items[idx1];
         const circuitIdx2 = self.map.items[idx2];
 
         if (circuitIdx1 == circuitIdx2) {
             // already in the same circuit
-            return;
+            return false;
         }
 
         // move both to the first circuit
@@ -129,6 +129,7 @@ const CircuitMap = struct {
         try self.circuitList.items[circuitIdx1].appendSlice(idx2Content.*.items);
 
         idx2Content.clearRetainingCapacity();
+        return true;
     }
 
     pub fn deinit(self: *CircuitMap) void {
@@ -153,8 +154,6 @@ fn solveFirst(allocator: utils.Allocator, input: utils.Str, category: utils.Solv
     defer distances.deinit();
 
     for (0..boxes.items.len) |i| {
-        const perc: f64 = @as(f64, @floatFromInt(i)) / @as(f64, @floatFromInt(boxes.items.len)) * 100.0;
-        std.debug.print("step one: {any}\n", .{perc});
         for (i + 1..boxes.items.len) |j| {
             const box1 = boxes.items[i];
             const box2 = boxes.items[j];
@@ -167,7 +166,7 @@ fn solveFirst(allocator: utils.Allocator, input: utils.Str, category: utils.Solv
 
     std.debug.print("sort begin\n", .{});
 
-    std.sort.block(DistanceStruct, distances.items, {}, cmpDistance);
+    utils.sort(DistanceStruct, distances.items, {}, cmpDistance);
 
     std.debug.print("sort end\n", .{});
 
@@ -175,11 +174,21 @@ fn solveFirst(allocator: utils.Allocator, input: utils.Str, category: utils.Solv
     var circuitMap = try CircuitMap.init(allocator, boxes.items.len);
     defer circuitMap.deinit();
 
-    for (0..amountToCheck) |idx| {
-        const distance = distances.items[idx];
+    {
+        var i: u64 = 0;
+        var idx: u64 = 0;
 
-        // make these two boxes connected
-        try circuitMap.connect(distance.i, distance.j);
+        while (i < amountToCheck) : (idx += 1) {
+            const distance = distances.items[idx];
+
+            // make these two boxes connected
+            const hasConnected = try circuitMap.connect(distance.i, distance.j);
+            if (hasConnected) {
+                i += 1;
+            } else {
+                i += 1;
+            }
+        }
     }
 
     circuitMap.sort();
@@ -191,6 +200,7 @@ fn solveFirst(allocator: utils.Allocator, input: utils.Str, category: utils.Solv
     for (0..amountToMultiply) |i| {
         const map = circuitMap.circuitList.items[i];
         result *= map.items.len;
+        std.debug.print("result: {any}\n", .{map.items.len});
     }
 
     return utils.Solution{ .u64 = result };
@@ -211,6 +221,7 @@ pub const day = utils.Day{
     .solutions = .{
         .first = .{ .implemented = .{
             .solution = .{ .u64 = 40 },
+            .real_value = .{ .u64 = 90036 },
         } },
         .second = .pending,
     },
