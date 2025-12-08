@@ -147,10 +147,14 @@ fn solveFirst(allocator: utils.Allocator, input: utils.Str, category: utils.Solv
 
     const amountToCheck: u32 = if (category == .example) 10 else 1000;
 
+    std.debug.print("solve {any}\n", .{category});
+
     var distances = utils.ListManaged(DistanceStruct).init(allocator);
     defer distances.deinit();
 
     for (0..boxes.items.len) |i| {
+        const perc: f64 = @as(f64, @floatFromInt(i)) / @as(f64, @floatFromInt(boxes.items.len)) * 100.0;
+        std.debug.print("step one: {any}\n", .{perc});
         for (i + 1..boxes.items.len) |j| {
             const box1 = boxes.items[i];
             const box2 = boxes.items[j];
@@ -161,7 +165,11 @@ fn solveFirst(allocator: utils.Allocator, input: utils.Str, category: utils.Solv
         }
     }
 
-    std.sort.insertion(DistanceStruct, distances.items, {}, cmpDistance);
+    std.debug.print("sort begin\n", .{});
+
+    std.sort.block(DistanceStruct, distances.items, {}, cmpDistance);
+
+    std.debug.print("sort end\n", .{});
 
     // this is a "map" from index to connected circuits, as the key is a index, it is represented as array
     var circuitMap = try CircuitMap.init(allocator, boxes.items.len);
