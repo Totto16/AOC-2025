@@ -134,6 +134,29 @@ const CircuitMap = struct {
         return;
     }
 
+    pub fn connect2(self: *CircuitMap, idx1: usize, idx2: usize) !bool {
+        const circuitIdx1 = self.map.items[idx1];
+        const circuitIdx2 = self.map.items[idx2];
+
+        if (circuitIdx1 == circuitIdx2) {
+            return false;
+        }
+
+        // move both to the first circuit
+        self.map.items[idx2] = circuitIdx1;
+
+        const idx2Content = self.circuitList.items[circuitIdx2];
+
+        try self.circuitList.items[circuitIdx1].appendSlice(idx2Content.items);
+
+        for (idx2Content.items) |idxToChange| {
+            self.map.items[idxToChange] = circuitIdx1;
+        }
+
+        self.circuitList.items[circuitIdx2].clearRetainingCapacity();
+        return true;
+    }
+
     pub fn deinit(self: *CircuitMap) void {
         for (self.circuitList.items) |it| {
             it.deinit();
@@ -191,11 +214,54 @@ fn solveFirst(allocator: utils.Allocator, input: utils.Str, category: utils.Solv
 }
 
 fn solveSecond(allocator: utils.Allocator, input: utils.Str, category: utils.SolveCategory) utils.SolveResult {
-    _ = allocator;
-    _ = input;
     _ = category;
 
-    return utils.Solution{ .u64 = 0 };
+    var boxes = try parseBoxes(allocator, input);
+    defer boxes.deinit();
+
+    var distances = utils.ListManaged(DistanceStruct).init(allocator);
+    defer distances.deinit();
+
+    for (0..boxes.items.len) |i| {
+        for (i + 1..boxes.items.len) |j| {
+            const box1 = boxes.items[i];
+            const box2 = boxes.items[j];
+
+            const dist = box1.distance(box2);
+
+            try distances.append(DistanceStruct{ .distance = dist, .i = i, .j = j });
+        }
+    }
+
+    utils.sort(DistanceStruct, distances.items, {}, cmpDistance);
+
+    const circuitLen: usize = boxes.items.len;
+
+    // this is a "map" from index to connected circuits, as the key is a index, it is represented as array
+    var circuitMap = try CircuitMap.init(allocator, circuitLen);
+    defer circuitMap.deinit();
+
+    var remainingConnections: u64 = circuitLen;
+
+    var idx: usize = 0;
+
+    while (idx < distances.items.len) : (idx += 1) {
+        const distance = distances.items[idx];
+
+        // make these two boxes connected
+        const removedOne = try circuitMap.connect2(distance.i, distance.j);
+        if (removedOne) {
+            remainingConnections -= 1;
+        }
+
+        if (remainingConnections == 1) {
+            const result: u64 = boxes.items[distance.i].x * boxes.items[distance.j].x;
+            return utils.Solution{ .u64 = result };
+        }
+    }
+
+    std.debug.print("Remaining connections: {}\n", .{remainingConnections});
+    return utils.SolveErrors.NotSolved;
 }
 
 const generated = @import("generated");
@@ -207,7 +273,10 @@ pub const day = utils.Day{
             .solution = .{ .u64 = 40 },
             .real_value = .{ .u64 = 90036 },
         } },
-        .second = .pending,
+        .second = .{ .implemented = .{
+            .solution = .{ .u64 = 25272 },
+            .real_value = .{ .u64 = 6083499488 },
+        } },
     },
     .inputs = .both_same,
     .root = generated.root,
