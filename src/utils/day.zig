@@ -25,7 +25,9 @@ pub const SolveErrors = error{ PredicateNotMet, ParseError, NotSolved, OutOfMemo
 
 pub const SolveResult = SolveErrors!Solution;
 
-const SolveFn = *const fn (allocator: std.mem.Allocator, input: []const u8, category: SolveCategory) SolveResult;
+const SolveFn = *const fn (allocator: std.mem.Allocator, input: []const u8) SolveResult;
+
+const SolveExtendedFn = *const fn (allocator: std.mem.Allocator, input: []const u8, category: SolveCategory) SolveResult;
 
 const SolveFnBoth = *const fn (allocator: std.mem.Allocator, input: []const u8, which: WhichPart, category: SolveCategory) SolveResult;
 
@@ -34,7 +36,16 @@ const IndividualSolver = struct {
     second: SolveFn,
 };
 
-pub const Solver = union(enum) { both: SolveFnBoth, individual: IndividualSolver };
+const IndividualExtendedSolver = struct {
+    first: SolveExtendedFn,
+    second: SolveExtendedFn,
+};
+
+pub const Solver = union(enum) {
+    both: SolveFnBoth,
+    individual: IndividualSolver,
+    individual_extended: IndividualExtendedSolver,
+};
 
 pub const Solutions = struct {
     solution: Solution,
@@ -105,8 +116,14 @@ pub const Day = struct {
             .both => |func| return func(allocator, input, which, category),
             .individual => |individual| {
                 switch (which) {
-                    .first => return individual.first(allocator, input, category),
-                    .second => return individual.second(allocator, input, category),
+                    .first => return individual.first(allocator, input),
+                    .second => return individual.second(allocator, input),
+                }
+            },
+            .individual_extended => |individual_ex| {
+                switch (which) {
+                    .first => return individual_ex.first(allocator, input, category),
+                    .second => return individual_ex.second(allocator, input, category),
                 }
             },
         }
