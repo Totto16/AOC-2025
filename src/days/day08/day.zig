@@ -90,17 +90,16 @@ const CircuitMap = struct {
 
     pub fn init(allocator: utils.Allocator, size: usize) !CircuitMap {
         var circuitList = utils.ListManaged(utils.ListManaged(usize)).init(allocator);
-        try circuitList.ensureTotalCapacity(size);
+        try circuitList.resize(size);
 
         var map = utils.ListManaged(usize).init(allocator);
-        try map.ensureTotalCapacity(size);
-        map.expandToCapacity();
+        try map.resize(size);
 
         for (0..size) |idx| {
             var list = utils.ListManaged(usize).init(allocator);
             try list.append(idx);
 
-            try circuitList.append(list);
+            circuitList.items[idx] = list;
 
             map.items[idx] = idx;
         }
@@ -112,31 +111,33 @@ const CircuitMap = struct {
         utils.sort(utils.ListManaged(usize), self.circuitList.items, {}, cmpAmount);
     }
 
-    pub fn connect(self: *CircuitMap, idx1: usize, idx2: usize) !bool {
+    pub fn connect(self: *CircuitMap, idx1: usize, idx2: usize) !void {
         const circuitIdx1 = self.map.items[idx1];
         const circuitIdx2 = self.map.items[idx2];
 
         if (circuitIdx1 == circuitIdx2) {
-            // already in the same circuit
-            return false;
+            return;
         }
 
         // move both to the first circuit
         self.map.items[idx2] = circuitIdx1;
 
-        var idx2Content = &(self.circuitList.items[circuitIdx2]);
+        const idx2Content = self.circuitList.items[circuitIdx2];
 
-        try self.circuitList.items[circuitIdx1].appendSlice(idx2Content.*.items);
+        try self.circuitList.items[circuitIdx1].appendSlice(idx2Content.items);
 
-        idx2Content.clearRetainingCapacity();
-        return true;
+        for (idx2Content.items) |idxToChange| {
+            self.map.items[idxToChange] = circuitIdx1;
+        }
+
+        self.circuitList.items[circuitIdx2].clearRetainingCapacity();
+        return;
     }
 
     pub fn deinit(self: *CircuitMap) void {
-        for (self.circuitList.items) |value| {
-            value.deinit();
+        for (self.circuitList.items) |it| {
+            it.deinit();
         }
-
         self.circuitList.deinit();
         self.map.deinit();
     }
@@ -147,8 +148,6 @@ fn solveFirst(allocator: utils.Allocator, input: utils.Str, category: utils.Solv
     defer boxes.deinit();
 
     const amountToCheck: u32 = if (category == .example) 10 else 1000;
-
-    std.debug.print("solve {any}\n", .{category});
 
     var distances = utils.ListManaged(DistanceStruct).init(allocator);
     defer distances.deinit();
@@ -164,31 +163,17 @@ fn solveFirst(allocator: utils.Allocator, input: utils.Str, category: utils.Solv
         }
     }
 
-    std.debug.print("sort begin\n", .{});
-
     utils.sort(DistanceStruct, distances.items, {}, cmpDistance);
-
-    std.debug.print("sort end\n", .{});
 
     // this is a "map" from index to connected circuits, as the key is a index, it is represented as array
     var circuitMap = try CircuitMap.init(allocator, boxes.items.len);
     defer circuitMap.deinit();
 
-    {
-        var i: u64 = 0;
-        var idx: u64 = 0;
+    for (0..amountToCheck) |idx| {
+        const distance = distances.items[idx];
 
-        while (i < amountToCheck) : (idx += 1) {
-            const distance = distances.items[idx];
-
-            // make these two boxes connected
-            const hasConnected = try circuitMap.connect(distance.i, distance.j);
-            if (hasConnected) {
-                i += 1;
-            } else {
-                i += 1;
-            }
-        }
+        // make these two boxes connected
+        try circuitMap.connect(distance.i, distance.j);
     }
 
     circuitMap.sort();
@@ -198,9 +183,8 @@ fn solveFirst(allocator: utils.Allocator, input: utils.Str, category: utils.Solv
     var result: u64 = 1;
 
     for (0..amountToMultiply) |i| {
-        const map = circuitMap.circuitList.items[i];
-        result *= map.items.len;
-        std.debug.print("result: {any}\n", .{map.items.len});
+        const list = circuitMap.circuitList.items[i];
+        result *= list.items.len;
     }
 
     return utils.Solution{ .u64 = result };
