@@ -22,62 +22,124 @@ const Tile = struct {
     pub fn eq(self: *const Tile, other: Tile) bool {
         return self.x == other.x and self.y == other.y;
     }
+};
 
-    pub fn apply(self: *const Tile, continuation: TileChainContinuation) !Tile {
-        switch (continuation.direction) {
-            .DirectionX => {
-                const new_x: i64 = @as(i64, @intCast(self.x)) + continuation.amount;
+fn lineInRange(start: u64, end: u64, pos: u64) bool {
+    return pos >= start and pos <= end;
+}
 
-                if (new_x < 0) {
-                    return error.ContinuationNegative;
-                }
+const Line = union(enum) {
+    direction_x: struct {
+        start_y: u64,
+        end_y: u64,
+        x_fixed: u64,
+    },
+    direction_y: struct {
+        start_x: u64,
+        end_x: u64,
+        y_fixed: u64,
+    },
 
-                return Tile{ .x = @as(u64, @intCast(new_x)), .y = self.y };
+    pub fn fromTiles(tile1: Tile, tile2: Tile) utils.SolveErrors!Line {
+        const line: Line = blk: {
+            if (tile1.x == tile2.x) {
+                const sorted_y = sort2(tile1.y, tile2.y);
+
+                const line = Line{
+                    .direction_x = .{
+                        .x_fixed = tile1.x,
+                        .start_y = sorted_y.first,
+                        .end_y = sorted_y.last,
+                    },
+                };
+
+                break :blk line;
+            }
+
+            if (tile1.y == tile2.y) {
+                const sorted_x = sort2(tile1.x, tile2.x);
+
+                const line = Line{
+                    .direction_y = .{
+                        .y_fixed = tile1.y,
+                        .start_x = sorted_x.first,
+                        .end_x = sorted_x.last,
+                    },
+                };
+
+                break :blk line;
+            }
+
+            return utils.SolveErrors.PredicateNotMet;
+        };
+
+        return line;
+    }
+
+    pub fn dest(self: *const Line) Tile {
+        switch (self.*) {
+            .direction_x => |x| {
+                return Tile{ .x = x.x_fixed, .y = x.end_y };
             },
-            .DirectionY => {
-                const new_y: i64 = @as(i64, @intCast(self.y)) + continuation.amount;
+            .direction_y => |y| {
+                return Tile{ .x = y.end_x, .y = y.y_fixed };
+            },
+        }
+    }
 
-                if (new_y < 0) {
-                    return error.ContinuationNegative;
+    pub fn intersect(self: *const Line, other: Line) bool {
+        switch (self.*) {
+            .direction_x => |self_as_x| {
+                switch (other) {
+                    .direction_x => {
+                        // both x, not intersecting ads per definition
+
+                        return false;
+                    },
+                    .direction_y => |other_as_y| {
+                        if (!lineInRange(other_as_y.start_x, other_as_y.end_x, self_as_x.x_fixed)) {
+                            return false;
+                        }
+
+                        return lineInRange(self_as_x.start_y, self_as_x.end_y, other_as_y.y_fixed);
+                    },
                 }
+            },
+            .direction_y => |self_as_y| {
+                switch (other) {
+                    .direction_x => |other_as_x| {
+                        if (!lineInRange(self_as_y.start_x, self_as_y.end_x, other_as_x.x_fixed)) {
+                            return false;
+                        }
 
-                return Tile{ .x = self.x, .y = @as(u64, @intCast(new_y)) };
+                        return lineInRange(other_as_x.start_y, other_as_x.end_y, self_as_y.y_fixed);
+                    },
+                    .direction_y => {
+                        // both y, not intersecting ads per definition
+
+                        return false;
+                    },
+                }
             },
         }
     }
 };
 
-const TileChainDirection = enum(u8) {
-    DirectionX,
-    DirectionY,
-};
-
-const TileChainContinuation = struct {
-    direction: TileChainDirection,
-    amount: i64,
-};
-
-const TileChainList = struct {
+const TilesAndLines = struct {
     tiles: utils.ListManaged(Tile),
 
-    start_tile: Tile,
-    continuations: utils.ListManaged(TileChainContinuation),
+    lines: utils.ListManaged(Line),
 
-    pub fn init(allocator: utils.Allocator, tiles: utils.ListManaged(Tile)) !TileChainList {
-        if (tiles.items.len == 0) {
-            return utils.SolveErrors.PredicateNotMet;
-        }
-
-        return TileChainList{
+    pub fn init(allocator: utils.Allocator, tiles: utils.ListManaged(Tile)) TilesAndLines {
+        return TilesAndLines{
             .tiles = tiles,
-            .start_tile = tiles.items[0],
-            .continuations = utils.ListManaged(TileChainContinuation).init(allocator),
+            .lines = utils.ListManaged(Line).init(allocator),
         };
     }
 
-    pub fn deinit(self: *TileChainList) void {
+    pub fn deinit(self: *TilesAndLines) void {
         self.tiles.deinit();
-        self.continuations.deinit();
+        self.lines.deinit();
     }
 };
 
@@ -146,89 +208,98 @@ fn solveFirst(allocator: utils.Allocator, input: utils.Str) utils.SolveResult {
     return utils.Solution{ .u64 = max_area };
 }
 
-fn parseTiles2(allocator: utils.Allocator, input: utils.Str) utils.SolveErrors!TileChainList {
+const Sorted = struct { first: u64, last: u64 };
+
+fn sort2(a: u64, b: u64) Sorted {
+    if (a > b) {
+        return .{
+            .first = b,
+            .last = a,
+        };
+    }
+
+    return .{
+        .first = a,
+        .last = b,
+    };
+}
+
+fn parseTiles2(allocator: utils.Allocator, input: utils.Str) utils.SolveErrors!TilesAndLines {
     const tiles = try parseTiles(allocator, input);
 
-    var chain_list: TileChainList = try TileChainList.init(allocator, tiles);
-    errdefer chain_list.deinit();
+    var tiles_and_lines: TilesAndLines = TilesAndLines.init(allocator, tiles);
+    errdefer tiles_and_lines.deinit();
 
     // validate adjacent tiles have at least one same coordinate
     for (0..tiles.items.len) |i| {
         const tile1 = tiles.items[i];
         const tile2 = tiles.items[@mod(i + 1, tiles.items.len)];
 
-        const continuation: TileChainContinuation = blk: {
-            if (tile1.x == tile2.x) {
-                const amount = @as(i64, @intCast(tile2.y)) - @as(i64, @intCast(tile1.y));
-                break :blk TileChainContinuation{ .direction = .DirectionY, .amount = amount };
-            }
+        const line: Line = try Line.fromTiles(tile1, tile2);
 
-            if (tile1.y == tile2.y) {
-                const amount = @as(i64, @intCast(tile2.x)) - @as(i64, @intCast(tile1.x));
-                break :blk TileChainContinuation{ .direction = .DirectionX, .amount = amount };
-            }
-
-            return utils.SolveErrors.PredicateNotMet;
-        };
-
-        try chain_list.continuations.append(continuation);
+        try tiles_and_lines.lines.append(line);
     }
 
     { //explicitly assert, that the last tile and the first one are connected
-        const lastCont = chain_list.continuations.getLastOrNull() orelse return utils.SolveErrors.PredicateNotMet;
+        const lastLine = tiles_and_lines.lines.getLastOrNull() orelse return utils.SolveErrors.PredicateNotMet;
 
         const lastTile = tiles.getLastOrNull() orelse return utils.SolveErrors.PredicateNotMet;
 
         const firstTile = tiles.items[0];
 
-        const calcFirstTile = lastTile.apply(lastCont) catch return utils.SolveErrors.PredicateNotMet;
+        const calcFirstTile = lastLine.dest();
 
         if (!calcFirstTile.eq(firstTile)) {
-            std.debug.print("Expected last tile to connect to the first, but got: {} -> {} -> ( expected {}, got {} )\n", .{ lastTile, lastCont, firstTile, calcFirstTile });
+            std.debug.print("Expected last tile to connect to the first, but got: {} -> {} -> ( expected {}, got {} )\n", .{ lastTile, lastLine, firstTile, calcFirstTile });
             return utils.SolveErrors.PredicateNotMet;
         }
     }
 
     // not checked here, but given by the input: no lines cross each other, it is one continuous shape!
 
-    return chain_list;
+    return tiles_and_lines;
 }
 
-const Line = struct {
-    start: Tile,
-    end: Tile,
+const RectLines = struct {
+    lines: [4]Line,
+
+    pub fn init(start: Tile, end: Tile) utils.SolveErrors!RectLines {
+        const edge1 = Tile{
+            .x = end.x,
+            .y = start.y,
+        };
+
+        const edge2 = Tile{
+            .x = start.x,
+            .y = end.y,
+        };
+
+        return RectLines{ .lines = [4]Line{
+            try Line.fromTiles(start, edge1),
+            try Line.fromTiles(edge1, end),
+            try Line.fromTiles(end, edge2),
+            try Line.fromTiles(edge2, start),
+        } };
+    }
 };
 
 const AreaEntry = struct {
-    start_ref: usize,
-    end_ref: usize,
+    start: Tile,
+    end: Tile,
     area: AreaNum,
 
-    pub fn isValid(self: *const AreaEntry, allocator: utils.Allocator, tail_chain_list: TileChainList) bool {
-        const start_tile = tail_chain_list.tiles.items[self.start_ref];
-        const end_tile = tail_chain_list.tiles.items[self.end_ref];
+    pub fn isValid(self: *const AreaEntry, tiles_and_lines: TilesAndLines) utils.SolveErrors!bool {
+        const rect_lines = try RectLines.init(self.start, self.end);
 
-        const continuation_ref = self.start_ref;
-
-        var linesToCheck = utils.ListManaged(Line).init(allocator);
-
-        {
-            var current_tile = start_tile;
-            for (0..4) |i| {
-                const cont = tail_chain_list.continuations.items[continuation_ref + i];
-
-                const new_tile = current_tile.apply(cont) catch {
-                    std.debug.print("ERROR: predicate not met, continuation list has invalid entries!\n", .{});
+        for (rect_lines.lines) |rect_line| {
+            for (tiles_and_lines.lines.items) |line| {
+                if (line.intersect(rect_line)) {
                     return false;
-                };
-                linesToCheck.append(Line{ .start = current_tile, .end = new_tile });
-                current_tile = new_tile;
+                }
             }
         }
 
-        for (0..tail_chain_list.continuations.items.len) |i| {}
-
-        return false;
+        return true;
     }
 };
 
@@ -237,27 +308,27 @@ fn cmpArea(ctx: void, a: AreaEntry, b: AreaEntry) bool {
 }
 
 fn solveSecond(allocator: utils.Allocator, input: utils.Str) utils.SolveResult {
-    var tiles: TileChainList = try parseTiles2(allocator, input);
-    defer tiles.deinit();
+    var tiles_and_lines: TilesAndLines = try parseTiles2(allocator, input);
+    defer tiles_and_lines.deinit();
 
     var areas = utils.ListManaged(AreaEntry).init(allocator);
     defer areas.deinit();
 
-    for (0..tiles.tiles.items.len) |i| {
-        for (i..tiles.tiles.items.len) |j| {
-            const tile1 = tiles.tiles.items[i];
-            const tile2 = tiles.tiles.items[j];
+    for (0..tiles_and_lines.tiles.items.len) |i| {
+        for (i..tiles_and_lines.tiles.items.len) |j| {
+            const tile1 = tiles_and_lines.tiles.items[i];
+            const tile2 = tiles_and_lines.tiles.items[j];
 
             const area_val = tile1.area(tile2);
 
-            try areas.append(AreaEntry{ .start_ref = i, .end_ref = j, .area = area_val });
+            try areas.append(AreaEntry{ .start = tile1, .end = tile2, .area = area_val });
         }
     }
 
     utils.sort(AreaEntry, areas.items, {}, cmpArea);
 
     for (areas.items) |entry| {
-        if (entry.isValid(tiles)) {
+        if (try entry.isValid(tiles_and_lines)) {
             return utils.Solution{ .u64 = entry.area };
         }
     }
