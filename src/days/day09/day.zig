@@ -25,7 +25,9 @@ const Tile = struct {
 };
 
 fn lineInRange(start: u64, end: u64, pos: u64) bool {
-    return pos >= start and pos <= end;
+    const sorted = sort2(start, end);
+
+    return pos >= sorted.first and pos <= sorted.last;
 }
 
 const Line = union(enum) {
@@ -43,13 +45,11 @@ const Line = union(enum) {
     pub fn fromTiles(tile1: Tile, tile2: Tile) utils.SolveErrors!Line {
         const line: Line = blk: {
             if (tile1.x == tile2.x) {
-                const sorted_y = sort2(tile1.y, tile2.y);
-
                 const line = Line{
                     .direction_x = .{
                         .x_fixed = tile1.x,
-                        .start_y = sorted_y.first,
-                        .end_y = sorted_y.last,
+                        .start_y = tile1.y,
+                        .end_y = tile2.y,
                     },
                 };
 
@@ -57,13 +57,11 @@ const Line = union(enum) {
             }
 
             if (tile1.y == tile2.y) {
-                const sorted_x = sort2(tile1.x, tile2.x);
-
                 const line = Line{
                     .direction_y = .{
                         .y_fixed = tile1.y,
-                        .start_x = sorted_x.first,
-                        .end_x = sorted_x.last,
+                        .start_x = tile1.x,
+                        .end_x = tile2.x,
                     },
                 };
 
@@ -283,23 +281,40 @@ const RectLines = struct {
     }
 };
 
+const Error = union(enum) { static: []const u8, line_intersect: struct {
+    line: Line,
+    tile_line: Line,
+} };
+
+const Valid = union(enum) {
+    valid,
+    invalid: Error,
+};
+
 const AreaEntry = struct {
     start: Tile,
     end: Tile,
     area: AreaNum,
 
-    pub fn isValid(self: *const AreaEntry, tiles_and_lines: TilesAndLines) utils.SolveErrors!bool {
+    pub fn isValidExt(self: *const AreaEntry, tiles_and_lines: TilesAndLines) utils.SolveErrors!Valid {
         const rect_lines = try RectLines.init(self.start, self.end);
 
         for (rect_lines.lines) |rect_line| {
             for (tiles_and_lines.lines.items) |line| {
                 if (line.intersect(rect_line)) {
-                    return false;
+                    return .{ .invalid = .{ .line_intersect = .{
+                        .line = rect_line,
+                        .tile_line = line,
+                    } } };
                 }
             }
         }
 
-        return true;
+        return .valid;
+    }
+
+    pub fn isValid(self: *const AreaEntry, tiles_and_lines: TilesAndLines) utils.SolveErrors!bool {
+        return try self.isValidExt(tiles_and_lines) == .valid;
     }
 };
 
@@ -328,6 +343,7 @@ fn solveSecond(allocator: utils.Allocator, input: utils.Str) utils.SolveResult {
     utils.sort(AreaEntry, areas.items, {}, cmpArea);
 
     for (areas.items) |entry| {
+        std.debug.print("Is valid {}: {}\n", .{ entry, try entry.isValidExt(tiles_and_lines) });
         if (try entry.isValid(tiles_and_lines)) {
             return utils.Solution{ .u64 = entry.area };
         }
@@ -347,7 +363,7 @@ pub const day = utils.Day{
         } },
         .second = .{ .implemented = .{
             .solution = .{ .u64 = 24 },
-            .real_value = .{ .u64 = 1 },
+            .real_value = null,
         } },
     },
     .inputs = .both_same,
