@@ -85,7 +85,7 @@ const Line = union(enum) {
         }
     }
 
-    pub fn intersect(self: *const Line, other: Line) bool {
+    pub fn intersects(self: *const Line, other: Line) bool {
         switch (self.*) {
             .direction_x => |self_as_x| {
                 switch (other) {
@@ -122,6 +122,18 @@ const Line = union(enum) {
         }
     }
 };
+
+const Direction = enum(u8) {
+    Positive,
+    Negative,
+};
+
+const LineWithDirection = struct {
+    line: Line,
+    direction: Direction,
+};
+
+fn intersectsInward(rect_line: LineWithDirection, other: Line) bool {}
 
 const TilesAndLines = struct {
     tiles: utils.ListManaged(Tile),
@@ -258,25 +270,39 @@ fn parseTiles2(allocator: utils.Allocator, input: utils.Str) utils.SolveErrors!T
     return tiles_and_lines;
 }
 
-const RectLines = struct {
-    lines: [4]Line,
+const Rect = struct {
+    start: Tile,
+    end: Tile,
+};
 
-    pub fn init(start: Tile, end: Tile) utils.SolveErrors!RectLines {
+const RectLines = struct {
+    lines: [4]LineWithDirection,
+
+    fn directionFromEdges(rect: Rect, line: Line, edg1: Tile, edg2: Tile) Direction {
+        // TODO
+    }
+
+    fn directionLineFromEdges(rect: Rect, edg1: Tile, edg2: Tile) utils.SolveErrors!LineWithDirection {
+        const line = try Line.fromTiles(edg1, edg2);
+        return LineWithDirection{ .line = line, .direction = directionFromEdges(rect, line, edg1, edg2) };
+    }
+
+    pub fn init(rect: Rect) utils.SolveErrors!RectLines {
         const edge1 = Tile{
-            .x = end.x,
-            .y = start.y,
+            .x = rect.end.x,
+            .y = rect.start.y,
         };
 
         const edge2 = Tile{
-            .x = start.x,
-            .y = end.y,
+            .x = rect.start.x,
+            .y = rect.end.y,
         };
 
-        return RectLines{ .lines = [4]Line{
-            try Line.fromTiles(start, edge1),
-            try Line.fromTiles(edge1, end),
-            try Line.fromTiles(end, edge2),
-            try Line.fromTiles(edge2, start),
+        return RectLines{ .lines = [4]LineWithDirection{
+            try directionLineFromEdges(rect, rect.start, edge1),
+            try directionLineFromEdges(rect, edge1, rect.end),
+            try directionLineFromEdges(rect, rect.end, edge2),
+            try directionLineFromEdges(rect, edge2, rect.start),
         } };
     }
 };
@@ -301,7 +327,7 @@ const AreaEntry = struct {
 
         for (rect_lines.lines) |rect_line| {
             for (tiles_and_lines.lines.items) |line| {
-                if (line.intersect(rect_line)) {
+                if (intersectsInward(rect_line, line)) {
                     return .{ .invalid = .{ .line_intersect = .{
                         .line = rect_line,
                         .tile_line = line,
