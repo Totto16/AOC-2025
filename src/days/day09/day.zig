@@ -24,19 +24,13 @@ const Tile = struct {
     }
 };
 
-fn lineInRange(start: u64, end: u64, pos: u64) bool {
-    const sorted = sort2(start, end);
-
-    return pos >= sorted.first and pos <= sorted.last;
-}
-
 const Line = union(enum) {
-    direction_x: struct {
+    direction_y: struct {
         start_y: u64,
         end_y: u64,
         x_fixed: u64,
     },
-    direction_y: struct {
+    direction_x: struct {
         start_x: u64,
         end_x: u64,
         y_fixed: u64,
@@ -46,7 +40,7 @@ const Line = union(enum) {
         const line: Line = blk: {
             if (tile1.x == tile2.x) {
                 const line = Line{
-                    .direction_x = .{
+                    .direction_y = .{
                         .x_fixed = tile1.x,
                         .start_y = tile1.y,
                         .end_y = tile2.y,
@@ -58,7 +52,7 @@ const Line = union(enum) {
 
             if (tile1.y == tile2.y) {
                 const line = Line{
-                    .direction_y = .{
+                    .direction_x = .{
                         .y_fixed = tile1.y,
                         .start_x = tile1.x,
                         .end_x = tile2.x,
@@ -76,48 +70,22 @@ const Line = union(enum) {
 
     pub fn dest(self: *const Line) Tile {
         switch (self.*) {
-            .direction_x => |x| {
-                return Tile{ .x = x.x_fixed, .y = x.end_y };
+            .direction_y => |y_dir| {
+                return Tile{ .x = y_dir.x_fixed, .y = y_dir.end_y };
             },
-            .direction_y => |y| {
-                return Tile{ .x = y.end_x, .y = y.y_fixed };
+            .direction_x => |x_dir| {
+                return Tile{ .x = x_dir.end_x, .y = x_dir.y_fixed };
             },
         }
     }
 
-    pub fn intersects(self: *const Line, other: Line) bool {
+    pub fn isPoint(self: *const Line) bool {
         switch (self.*) {
-            .direction_x => |self_as_x| {
-                switch (other) {
-                    .direction_x => {
-                        // both x, not intersecting ads per definition
-
-                        return false;
-                    },
-                    .direction_y => |other_as_y| {
-                        if (!lineInRange(other_as_y.start_x, other_as_y.end_x, self_as_x.x_fixed)) {
-                            return false;
-                        }
-
-                        return lineInRange(self_as_x.start_y, self_as_x.end_y, other_as_y.y_fixed);
-                    },
-                }
+            .direction_y => |y_dir| {
+                return y_dir.start_y == y_dir.end_y;
             },
-            .direction_y => |self_as_y| {
-                switch (other) {
-                    .direction_x => |other_as_x| {
-                        if (!lineInRange(self_as_y.start_x, self_as_y.end_x, other_as_x.x_fixed)) {
-                            return false;
-                        }
-
-                        return lineInRange(other_as_x.start_y, other_as_x.end_y, self_as_y.y_fixed);
-                    },
-                    .direction_y => {
-                        // both y, not intersecting ads per definition
-
-                        return false;
-                    },
-                }
+            .direction_x => |x_dir| {
+                return x_dir.start_x == x_dir.end_x;
             },
         }
     }
@@ -128,12 +96,88 @@ const Direction = enum(u8) {
     Negative,
 };
 
-const LineWithDirection = struct {
+const RectLine = struct {
     line: Line,
-    direction: Direction,
+    inner_rect_dir: Direction,
 };
 
-fn intersectsInward(rect_line: LineWithDirection, other: Line) bool {}
+fn lineInRangeInwards(start: u64, end: u64, pos: u64) bool {
+    const sorted = sort2(start, end);
+
+    return pos >= sorted.first and pos <= sorted.last;
+}
+
+fn lineOverlapsInwards(start: u64, end: u64, inner_rect_dir: Direction, pos: u64) bool {
+    const sorted = sort2(start, end);
+
+    // 6 cases
+
+    // 1+2: no overlaps from above or below
+    if (pos <= sorted.first or pos >= sorted.last) {
+        return false;
+    }
+
+    // explicitly exclude that edge case!
+    if (sorted.first == sorted.last) {
+        unreachable;
+    }
+
+    // 3: overlaps at the start but doesn't go into it
+    if (pos == sorted.first) {
+        // only overlaps inwards, if the rect is open in that direction it overlaps
+
+        // here it means downwards (positive)
+        return (inner_rect_dir == Direction.Positive);
+    }
+
+    // 4: overlaps at the end but doesn't go into it
+    if (pos == sorted.last) {
+        // only overlaps inwards, if the rect is open in that direction it overlaps
+
+        // here it means upwards (negative)
+        return (inner_rect_dir == Direction.Negative);
+    }
+
+    // case 5+6: it overlaps on both sites, always overlaps inwards
+    return true;
+}
+
+fn intersectsInward(rect_line: RectLine, other: Line) bool {
+    switch (rect_line.line) {
+        .direction_y => |rect_line_y| {
+            switch (other) {
+                .direction_y => {
+                    // both x, not intersecting inwards as per definition
+
+                    return false;
+                },
+                .direction_x => |other_as_x| {
+                    if (!lineInRangeInwards(other_as_x.start_x, other_as_x.end_x, rect_line_y.x_fixed)) {
+                        return false;
+                    }
+
+                    return lineOverlapsInwards(rect_line_y.start_y, rect_line_y.end_y, rect_line.inner_rect_dir, other_as_x.y_fixed);
+                },
+            }
+        },
+        .direction_x => |rect_line_x| {
+            switch (other) {
+                .direction_y => |other_as_y| {
+                    if (!lineInRangeInwards(rect_line_x.start_x, rect_line_x.end_x, other_as_y.x_fixed)) {
+                        return false;
+                    }
+
+                    return lineOverlapsInwards(other_as_y.start_y, other_as_y.end_y, rect_line.inner_rect_dir, rect_line_x.y_fixed);
+                },
+                .direction_x => {
+                    // both y, not intersecting inwards as per definition
+
+                    return false;
+                },
+            }
+        },
+    }
+}
 
 const TilesAndLines = struct {
     tiles: utils.ListManaged(Tile),
@@ -276,15 +320,45 @@ const Rect = struct {
 };
 
 const RectLines = struct {
-    lines: [4]LineWithDirection,
+    lines: [4]RectLine,
 
-    fn directionFromEdges(rect: Rect, line: Line, edg1: Tile, edg2: Tile) Direction {
-        // TODO
+    fn directionForRectLine(rect: Rect, line: Line) Direction {
+        switch (line) {
+            .direction_y => |y_line| {
+
+                // get the upper (lower) x coordinate, if it is that, it is downwards (positive) otherwise upwards (negative)
+                const sorted_x = sort2(rect.start.x, rect.end.x);
+
+                if (sorted_x.first == y_line.x_fixed) {
+                    return Direction.Positive;
+                }
+
+                if (sorted_x.last == y_line.x_fixed) {
+                    return Direction.Negative;
+                }
+
+                unreachable;
+            },
+            .direction_x => |x_line| {
+                // get the upper (lower) y coordinate, if it is that, it is downwards (positive) otherwise upwards (negative)
+                const sorted_y = sort2(rect.start.y, rect.end.y);
+
+                if (sorted_y.first == x_line.y_fixed) {
+                    return Direction.Positive;
+                }
+
+                if (sorted_y.last == x_line.y_fixed) {
+                    return Direction.Negative;
+                }
+
+                unreachable;
+            },
+        }
     }
 
-    fn directionLineFromEdges(rect: Rect, edg1: Tile, edg2: Tile) utils.SolveErrors!LineWithDirection {
+    fn directionLineFromEdges(rect: Rect, edg1: Tile, edg2: Tile) utils.SolveErrors!RectLine {
         const line = try Line.fromTiles(edg1, edg2);
-        return LineWithDirection{ .line = line, .direction = directionFromEdges(rect, line, edg1, edg2) };
+        return RectLine{ .line = line, .inner_rect_dir = directionForRectLine(rect, line) };
     }
 
     pub fn init(rect: Rect) utils.SolveErrors!RectLines {
@@ -298,7 +372,7 @@ const RectLines = struct {
             .y = rect.end.y,
         };
 
-        return RectLines{ .lines = [4]LineWithDirection{
+        return RectLines{ .lines = [4]RectLine{
             try directionLineFromEdges(rect, rect.start, edge1),
             try directionLineFromEdges(rect, edge1, rect.end),
             try directionLineFromEdges(rect, rect.end, edge2),
@@ -308,7 +382,7 @@ const RectLines = struct {
 };
 
 const Error = union(enum) { static: []const u8, line_intersect: struct {
-    line: Line,
+    line: RectLine,
     tile_line: Line,
 } };
 
@@ -322,11 +396,52 @@ const AreaEntry = struct {
     end: Tile,
     area: AreaNum,
 
+    pub fn fromEdges(start: Tile, end: Tile) AreaEntry {
+        const area_val = start.area(end);
+
+        return AreaEntry{
+            .start = start,
+            .end = end,
+            .area = area_val,
+        };
+    }
+
     pub fn isValidExt(self: *const AreaEntry, tiles_and_lines: TilesAndLines) utils.SolveErrors!Valid {
-        const rect_lines = try RectLines.init(self.start, self.end);
+        const rect_lines = try RectLines.init(Rect{ .start = self.start, .end = self.end });
 
         for (rect_lines.lines) |rect_line| {
+            if (rect_line.line.isPoint()) {
+                continue;
+            }
+
             for (tiles_and_lines.lines.items) |line| {
+                //TODO:
+                _ =
+                    \\..............
+                    \\.......#XXX#..
+                    \\.......X...X..
+                    \\..#XXXX#...X..
+                    \\..X........X..
+                    \\..#XXXXXX#.X..
+                    \\.........X.X..
+                    \\.........#X#..
+                    \\..............
+                ;
+
+                //TODO:
+                _ =
+                    \\..............
+                    \\.......#X_X#..
+                    \\.......X...X..
+                    \\..ÖXXXX#–Ä.X..
+                    \\..X......|.X..
+                    \\..#X_XXXX#.X..
+                    \\..|......X.X..
+                    \\..Ä––––––ÖX#..
+                    \\..............
+                ;
+
+                std.debug.print("intersectsInward {} {}: {}\n", .{ rect_line, line, intersectsInward(rect_line, line) });
                 if (intersectsInward(rect_line, line)) {
                     return .{ .invalid = .{ .line_intersect = .{
                         .line = rect_line,
@@ -345,7 +460,7 @@ const AreaEntry = struct {
 };
 
 fn cmpArea(ctx: void, a: AreaEntry, b: AreaEntry) bool {
-    return utils.asc(AreaNum)(ctx, a.area, b.area);
+    return utils.desc(AreaNum)(ctx, a.area, b.area);
 }
 
 fn solveSecond(allocator: utils.Allocator, input: utils.Str) utils.SolveResult {
@@ -360,16 +475,14 @@ fn solveSecond(allocator: utils.Allocator, input: utils.Str) utils.SolveResult {
             const tile1 = tiles_and_lines.tiles.items[i];
             const tile2 = tiles_and_lines.tiles.items[j];
 
-            const area_val = tile1.area(tile2);
-
-            try areas.append(AreaEntry{ .start = tile1, .end = tile2, .area = area_val });
+            try areas.append(AreaEntry.fromEdges(tile1, tile2));
         }
     }
 
     utils.sort(AreaEntry, areas.items, {}, cmpArea);
 
     for (areas.items) |entry| {
-        std.debug.print("Is valid {}: {}\n", .{ entry, try entry.isValidExt(tiles_and_lines) });
+        std.debug.print("is valid {}: {}\n", .{ entry, try entry.isValidExt(tiles_and_lines) });
         if (try entry.isValid(tiles_and_lines)) {
             return utils.Solution{ .u64 = entry.area };
         }
@@ -409,4 +522,146 @@ test "day 09" {
     defer _ = gpa.deinit();
 
     try day.@"test"(gpa.allocator());
+}
+
+test "day 09 - intersectsInward" {
+    const TestCase = struct { rect_line: RectLine, line: Line, intersects: bool };
+
+    //TODO
+    const FALSE = false;
+
+    const test_cases = [_]TestCase{
+        TestCase{
+            .rect_line = RectLine{ .line = .{ .direction_y = .{
+                .start_y = 7,
+                .end_y = 3,
+                .x_fixed = 2,
+            } }, .inner_rect_dir = .Positive },
+            .line = .{ .direction_x = .{
+                .start_x = 9,
+                .end_x = 2,
+                .y_fixed = 5,
+            } },
+            .intersects = true,
+        },
+        TestCase{
+            .rect_line = RectLine{ .line = .{ .direction_x = .{
+                .start_x = 9,
+                .end_x = 2,
+                .y_fixed = 5,
+            } }, .inner_rect_dir = .Negative },
+            .line = .{ .direction_x = .{
+                .start_x = 7,
+                .end_x = 11,
+                .y_fixed = 1,
+            } },
+            .intersects = false,
+        },
+        TestCase{
+            .rect_line = .{ .line = .{ .direction_x = .{
+                .start_x = 9,
+                .end_x = 2,
+                .y_fixed = 7,
+            } }, .inner_rect_dir = .Negative },
+            .line = .{ .direction_y = .{
+                .start_y = 1,
+                .end_y = 7,
+                .x_fixed = 11,
+            } },
+            .intersects = false,
+        },
+        //TODO
+        TestCase{
+            .rect_line = .{ .line = .{ .direction_x = .{ .start_x = 9, .end_x = 2, .y_fixed = 7 } }, .inner_rect_dir = .Negative },
+            .line = .{ .direction_y = .{ .start_y = 1, .end_y = 7, .x_fixed = 11 } },
+            .intersects = false,
+        },
+        TestCase{
+            .rect_line = .{ .line = .{ .direction_x = .{ .start_x = 9, .end_x = 2, .y_fixed = 7 } }, .inner_rect_dir = .Negative },
+            .line = .{ .direction_x = .{ .start_x = 11, .end_x = 9, .y_fixed = 7 } },
+            .intersects = false,
+        },
+        TestCase{
+            .rect_line = .{ .line = .{ .direction_x = .{ .start_x = 9, .end_x = 2, .y_fixed = 7 } }, .inner_rect_dir = .Negative },
+            .line = .{ .direction_y = .{ .start_y = 7, .end_y = 5, .x_fixed = 9 } },
+            .intersects = false,
+        },
+        TestCase{
+            .rect_line = .{ .line = .{ .direction_x = .{ .start_x = 9, .end_x = 2, .y_fixed = 5 } }, .inner_rect_dir = .Negative },
+            .line = .{ .direction_x = .{ .start_x = 7, .end_x = 11, .y_fixed = 1 } },
+            .intersects = false,
+        },
+        TestCase{
+            .rect_line = .{ .line = .{ .direction_x = .{ .start_x = 9, .end_x = 2, .y_fixed = 5 } }, .inner_rect_dir = .Negative },
+            .line = .{ .direction_y = .{ .start_y = 1, .end_y = 7, .x_fixed = 11 } },
+            .intersects = false,
+        },
+        TestCase{
+            .rect_line = .{ .line = .{ .direction_x = .{ .start_x = 9, .end_x = 2, .y_fixed = 5 } }, .inner_rect_dir = .Negative },
+            .line = .{ .direction_x = .{ .start_x = 11, .end_x = 9, .y_fixed = 7 } },
+            .intersects = false,
+        },
+        TestCase{
+            .rect_line = .{ .line = .{ .direction_x = .{ .start_x = 9, .end_x = 2, .y_fixed = 5 } }, .inner_rect_dir = .Negative },
+            .line = .{ .direction_y = .{ .start_y = 7, .end_y = 5, .x_fixed = 9 } },
+            .intersects = false,
+        },
+        TestCase{
+            .rect_line = .{ .line = .{ .direction_x = .{ .start_x = 9, .end_x = 2, .y_fixed = 5 } }, .inner_rect_dir = .Negative },
+            .line = .{ .direction_x = .{ .start_x = 9, .end_x = 2, .y_fixed = 5 } },
+            .intersects = false,
+        },
+        TestCase{
+            .rect_line = .{ .line = .{ .direction_x = .{ .start_x = 9, .end_x = 2, .y_fixed = 5 } }, .inner_rect_dir = .Negative },
+            .line = .{ .direction_y = .{ .start_y = 5, .end_y = 3, .x_fixed = 2 } },
+            .intersects = FALSE,
+        },
+
+        //TODO
+        // intersectsInward .{ .line = .{ .direction_x = .{ .start_x = 9, .end_x = 2, .y_fixed = 5 } }, .inner_rect_dir = .Negative } .{ .direction_y = .{ .start_y = 1, .end_y = 7, .x_fixed = 11 } }: true
+    };
+
+    for (test_cases) |test_case| {
+        const result = intersectsInward(test_case.rect_line, test_case.line);
+
+        if (result != test_case.intersects) {
+            std.debug.print("Wrong test result for {} {}\n", .{ test_case.rect_line, test_case.line });
+            try std.testing.expectEqual(test_case.intersects, result);
+        }
+    }
+}
+
+test "day 09 - isValid" {
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    defer _ = gpa.deinit();
+
+    const input =
+        \\7,1
+        \\11,1
+        \\11,7
+        \\9,7
+        \\9,5
+        \\2,5
+        \\2,3
+        \\7,3
+    ;
+
+    var tiles_and_lines: TilesAndLines = try parseTiles2(gpa.allocator(), input);
+    defer tiles_and_lines.deinit();
+
+    const TestCase = struct { area: AreaEntry, valid: bool };
+
+    const test_cases = [_]TestCase{
+        TestCase{ .area = AreaEntry.fromEdges(.{ .x = 9, .y = 7 }, .{ .x = 2, .y = 3 }), .valid = false },
+        TestCase{ .area = AreaEntry.fromEdges(.{ .x = 9, .y = 5 }, .{ .x = 2, .y = 3 }), .valid = true },
+    };
+
+    for (test_cases) |test_case| {
+        const result = try test_case.area.isValid(tiles_and_lines);
+
+        if (result != test_case.valid) {
+            std.debug.print("Wrong test result for {}\n", .{test_case.area});
+            try std.testing.expectEqual(test_case.valid, result);
+        }
+    }
 }
