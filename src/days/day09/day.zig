@@ -408,16 +408,6 @@ const RectLines = struct {
     }
 };
 
-const Error = union(enum) { static: []const u8, line_intersect: struct {
-    line: RectLine,
-    tile_line: Line,
-} };
-
-const Valid = union(enum) {
-    valid,
-    invalid: Error,
-};
-
 const AreaEntry = struct {
     start: Tile,
     end: Tile,
@@ -433,7 +423,7 @@ const AreaEntry = struct {
         };
     }
 
-    pub fn isValidExt(self: *const AreaEntry, tiles_and_lines: TilesAndLines) utils.SolveErrors!Valid {
+    pub fn isValid(self: *const AreaEntry, tiles_and_lines: TilesAndLines) utils.SolveErrors!bool {
         const rect_lines = try RectLines.init(Rect{ .start = self.start, .end = self.end });
 
         for (rect_lines.lines) |rect_line| {
@@ -443,19 +433,12 @@ const AreaEntry = struct {
 
             for (tiles_and_lines.lines.items) |line| {
                 if (intersectsInward(rect_line, line)) {
-                    return .{ .invalid = .{ .line_intersect = .{
-                        .line = rect_line,
-                        .tile_line = line,
-                    } } };
+                    return false;
                 }
             }
         }
 
-        return .valid;
-    }
-
-    pub fn isValid(self: *const AreaEntry, tiles_and_lines: TilesAndLines) utils.SolveErrors!bool {
-        return try self.isValidExt(tiles_and_lines) == .valid;
+        return true;
     }
 };
 
