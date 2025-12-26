@@ -101,10 +101,37 @@ const RectLine = struct {
     inner_rect_dir: Direction,
 };
 
-fn lineInRangeInwards(start: u64, end: u64, pos: u64) bool {
+fn lineInRangeInwards(start: u64, end: u64, inner_rect_dir: Direction, pos: u64) bool {
     const sorted = sort2(start, end);
 
-    return pos >= sorted.first and pos <= sorted.last;
+    // 5 cases
+
+    // 1: the pos is in the middle, always in range
+    if (pos > sorted.first and pos < sorted.last) {
+        return true;
+    }
+
+    // 2: the pos is before the edge, not relevant edge (altough it can be restrict the rectangle, but at least another line overlaps )
+    if (sorted.last < pos) {
+        return false;
+    }
+
+    // 3: the pos is after the edge, not relevant edge (altough it can be restrict the rectangle, but at least another line overlaps )
+    if (sorted.first > pos) {
+        return false;
+    }
+
+    // 4. the pos is at the start, only in range, if the rect dir is positive
+    if (sorted.first == pos) {
+        return inner_rect_dir == Direction.Positive;
+    }
+
+    // 5. the pos is at the end, only in range, if the rect dir is negative
+    if (sorted.last == pos) {
+        return inner_rect_dir == Direction.Negative;
+    }
+
+    unreachable;
 }
 
 fn lineOverlapsInwards(start: u64, end: u64, inner_rect_dir: Direction, pos: u64) bool {
@@ -152,7 +179,7 @@ fn intersectsInward(rect_line: RectLine, other: Line) bool {
                     return false;
                 },
                 .direction_x => |other_as_x| {
-                    if (!lineInRangeInwards(other_as_x.start_x, other_as_x.end_x, rect_line_y.x_fixed)) {
+                    if (!lineInRangeInwards(other_as_x.start_x, other_as_x.end_x, rect_line.inner_rect_dir, rect_line_y.x_fixed)) {
                         return false;
                     }
 
@@ -163,11 +190,11 @@ fn intersectsInward(rect_line: RectLine, other: Line) bool {
         .direction_x => |rect_line_x| {
             switch (other) {
                 .direction_y => |other_as_y| {
-                    if (!lineInRangeInwards(rect_line_x.start_x, rect_line_x.end_x, other_as_y.x_fixed)) {
+                    if (!lineInRangeInwards(other_as_y.start_y, other_as_y.end_y, rect_line.inner_rect_dir, rect_line_x.y_fixed)) {
                         return false;
                     }
 
-                    return lineOverlapsInwards(other_as_y.start_y, other_as_y.end_y, rect_line.inner_rect_dir, rect_line_x.y_fixed);
+                    return lineOverlapsInwards(rect_line_x.start_x, rect_line_x.end_x, rect_line.inner_rect_dir, other_as_y.x_fixed);
                 },
                 .direction_x => {
                     // both y, not intersecting inwards as per definition
@@ -415,33 +442,6 @@ const AreaEntry = struct {
             }
 
             for (tiles_and_lines.lines.items) |line| {
-                //TODO:
-                _ =
-                    \\..............
-                    \\.......#XXX#..
-                    \\.......X...X..
-                    \\..#XXXX#...X..
-                    \\..X........X..
-                    \\..#XXXXXX#.X..
-                    \\.........X.X..
-                    \\.........#X#..
-                    \\..............
-                ;
-
-                //TODO:
-                _ =
-                    \\..............
-                    \\.......#X_X#..
-                    \\.......X...X..
-                    \\..ÖXXXX#–Ä.X..
-                    \\..X......|.X..
-                    \\..#X_XXXX#.X..
-                    \\..|......X.X..
-                    \\..Ä––––––ÖX#..
-                    \\..............
-                ;
-
-                std.debug.print("intersectsInward {} {}: {}\n", .{ rect_line, line, intersectsInward(rect_line, line) });
                 if (intersectsInward(rect_line, line)) {
                     return .{ .invalid = .{ .line_intersect = .{
                         .line = rect_line,
@@ -482,7 +482,6 @@ fn solveSecond(allocator: utils.Allocator, input: utils.Str) utils.SolveResult {
     utils.sort(AreaEntry, areas.items, {}, cmpArea);
 
     for (areas.items) |entry| {
-        std.debug.print("is valid {}: {}\n", .{ entry, try entry.isValidExt(tiles_and_lines) });
         if (try entry.isValid(tiles_and_lines)) {
             return utils.Solution{ .u64 = entry.area };
         }
@@ -502,7 +501,7 @@ pub const day = utils.Day{
         } },
         .second = .{ .implemented = .{
             .solution = .{ .u64 = 24 },
-            .real_value = null,
+            .real_value = .{ .u64 = 1410501884 },
         } },
     },
     .inputs = .both_same,
@@ -525,10 +524,11 @@ test "day 09" {
 }
 
 test "day 09 - intersectsInward" {
-    const TestCase = struct { rect_line: RectLine, line: Line, intersects: bool };
-
-    //TODO
-    const FALSE = false;
+    const TestCase = struct {
+        rect_line: RectLine,
+        line: Line,
+        intersects: bool,
+    };
 
     const test_cases = [_]TestCase{
         TestCase{
@@ -542,6 +542,11 @@ test "day 09 - intersectsInward" {
                 .end_x = 2,
                 .y_fixed = 5,
             } },
+            .intersects = true,
+        },
+        TestCase{
+            .rect_line = .{ .line = .{ .direction_x = .{ .start_x = 11, .end_x = 2, .y_fixed = 1 } }, .inner_rect_dir = .Positive },
+            .line = .{ .direction_y = .{ .start_y = 3, .end_y = 1, .x_fixed = 7 } },
             .intersects = true,
         },
         TestCase{
@@ -570,7 +575,6 @@ test "day 09 - intersectsInward" {
             } },
             .intersects = false,
         },
-        //TODO
         TestCase{
             .rect_line = .{ .line = .{ .direction_x = .{ .start_x = 9, .end_x = 2, .y_fixed = 7 } }, .inner_rect_dir = .Negative },
             .line = .{ .direction_y = .{ .start_y = 1, .end_y = 7, .x_fixed = 11 } },
@@ -614,11 +618,14 @@ test "day 09 - intersectsInward" {
         TestCase{
             .rect_line = .{ .line = .{ .direction_x = .{ .start_x = 9, .end_x = 2, .y_fixed = 5 } }, .inner_rect_dir = .Negative },
             .line = .{ .direction_y = .{ .start_y = 5, .end_y = 3, .x_fixed = 2 } },
-            .intersects = FALSE,
+            .intersects = false,
         },
 
-        //TODO
-        // intersectsInward .{ .line = .{ .direction_x = .{ .start_x = 9, .end_x = 2, .y_fixed = 5 } }, .inner_rect_dir = .Negative } .{ .direction_y = .{ .start_y = 1, .end_y = 7, .x_fixed = 11 } }: true
+        TestCase{
+            .rect_line = .{ .line = .{ .direction_y = .{ .start_y = 50, .end_y = 66, .x_fixed = 5 } }, .inner_rect_dir = .Positive },
+            .line = .{ .direction_x = .{ .start_x = 5, .end_x = 4, .y_fixed = 65 } },
+            .intersects = false,
+        },
     };
 
     for (test_cases) |test_case| {
@@ -649,7 +656,10 @@ test "day 09 - isValid" {
     var tiles_and_lines: TilesAndLines = try parseTiles2(gpa.allocator(), input);
     defer tiles_and_lines.deinit();
 
-    const TestCase = struct { area: AreaEntry, valid: bool };
+    const TestCase = struct {
+        area: AreaEntry,
+        valid: bool,
+    };
 
     const test_cases = [_]TestCase{
         TestCase{ .area = AreaEntry.fromEdges(.{ .x = 9, .y = 7 }, .{ .x = 2, .y = 3 }), .valid = false },
