@@ -89,7 +89,7 @@ pub fn DoublyLinkedList(comptime T: type) type {
             self.inner.append(node_ptr);
         }
 
-        pub fn pop(self: *Self) ?*Node {
+        pub fn popLast(self: *Self) ?*Node {
             const result = self.inner.pop();
             if (result) |node| {
                 return typed_node_from_typed(node);
@@ -151,52 +151,52 @@ pub fn DoublyLinkedListManaged(comptime T: type) type {
             }
         }
 
-        pub fn first(self: *const Self) ?Node {
+        pub fn first(self: *const Self) ?T {
             if (self.inner.first()) |f| {
-                return f.*;
+                return f.value;
             }
 
             return null;
         }
 
-        pub fn last(self: *const Self) ?Node {
+        pub fn last(self: *const Self) ?T {
             if (self.inner.last()) |l| {
-                return l.*;
+                return l.value;
             }
 
             return null;
         }
 
         pub fn append(self: *Self, item: T) std.mem.Allocator.Error!void {
-            const managed_node: *Node = try self.allocator.create(Node);
+            const managed_node: *Node = try self.alloc.create(Node);
             managed_node.value = item;
             self.inner.append(managed_node);
         }
 
-        pub fn pop(self: *Self) ?Node {
-            const result = self.inner.pop();
+        pub fn popLast(self: *Self) ?T {
+            const result = self.inner.popLast();
 
             if (result) |node| {
-                const value = node.*;
-                self.allocator.destroy(node);
+                const value = node.value;
+                self.alloc.destroy(node);
                 return value;
             }
             return null;
         }
 
-        pub fn popFirst(self: *Self) ?Node {
+        pub fn popFirst(self: *Self) ?T {
             const result = self.inner.popFirst();
 
             if (result) |node| {
-                const value = node.*;
-                self.allocator.destroy(node);
+                const value = node.value;
+                self.alloc.destroy(node);
                 return value;
             }
             return null;
         }
 
         pub fn prepend(self: *Self, item: T) void {
-            const managed_node: *Node = try self.allocator.create(Node);
+            const managed_node: *Node = try self.alloc.create(Node);
             managed_node.value = item;
             self.inner.prepend(managed_node);
         }
@@ -214,11 +214,11 @@ pub fn DoublyLinkedListManaged(comptime T: type) type {
                 };
             }
 
-            pub fn next(self: *Iterator) ?Node {
+            pub fn next(self: *Iterator) ?T {
                 if (self.inner.next()) |node| {
                     const next_node = node.next();
                     self.current = next_node;
-                    return node.*;
+                    return node.value;
                 }
 
                 return null;

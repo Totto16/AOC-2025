@@ -51,7 +51,7 @@ pub fn StackManaged(comptime T: type) type {
         }
 
         pub fn popLast(self: *Self) ?T {
-            const result = self.inner.pop();
+            const result = self.inner.popLast();
 
             if (result) |node| {
                 const value = node.value;
