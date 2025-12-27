@@ -32,12 +32,24 @@ pub fn DoublyLinkedList(comptime T: type) type {
 
         pub const Iterator = struct {
             current: ?*Node,
+            valid: bool,
 
-            pub fn init(self: Self) Iterator {
-                return Iterator{ .current = self.first() };
+            pub fn init(self: *const Self) Iterator {
+                return Iterator{
+                    .current = self.first(),
+                    .valid = true,
+                };
+            }
+
+            pub fn invalidate(self: *Iterator) void {
+                self.valid = false;
             }
 
             pub fn next(self: *Iterator) ?*Node {
+                if (!self.valid) {
+                    std.debug.panic("Using invalid iterator!\n", .{});
+                }
+
                 if (self.current) |node| {
                     const next_node = node.next();
                     self.current = next_node;
@@ -115,10 +127,8 @@ pub fn DoublyLinkedList(comptime T: type) type {
             return self.inner.first == null;
         }
 
-        pub fn iter(self: *Self) Iterator {
-            return Iterator{
-                .current = self.inner.first,
-            };
+        pub fn iter(self: *const Self) Iterator {
+            return Iterator.init(self);
         }
 
         pub fn remove(self: *Self, node: *Node) void {
@@ -133,7 +143,7 @@ pub fn DoublyLinkedListManaged(comptime T: type) type {
 
         const InnerType = DoublyLinkedList(T);
 
-        const Node = InnerType.Node;
+        pub const Node = InnerType.Node;
 
         inner: InnerType,
         alloc: std.mem.Allocator,
@@ -214,10 +224,20 @@ pub fn DoublyLinkedListManaged(comptime T: type) type {
                 };
             }
 
+            pub fn invalidate(self: *Iterator) void {
+                self.inner.invalidate();
+            }
+
+            pub fn next_node(self: *Iterator) ?*Node {
+                if (self.inner.next()) |node| {
+                    return node;
+                }
+
+                return null;
+            }
+
             pub fn next(self: *Iterator) ?T {
                 if (self.inner.next()) |node| {
-                    const next_node = node.next();
-                    self.current = next_node;
                     return node.value;
                 }
 
@@ -229,6 +249,11 @@ pub fn DoublyLinkedListManaged(comptime T: type) type {
             return Iterator{
                 .inner = self.inner.iter(),
             };
+        }
+
+        pub fn remove(self: *Self, node: *Node) void {
+            self.inner.remove(node);
+            self.alloc.destroy(node);
         }
     };
 }

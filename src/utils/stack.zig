@@ -1,47 +1,33 @@
 const double_linked_list = @import("double_linked_list.zig");
 const std = @import("std");
 
-//TODO: some memory management is duplicated in DoublyLinkedListManaged
 pub fn StackManaged(comptime T: type) type {
     return struct {
         const Self = @This();
-        pub const InnerType = double_linked_list.DoublyLinkedList(T);
+        pub const InnerType = double_linked_list.DoublyLinkedListManaged(T);
 
         inner: InnerType,
-        allocator: std.mem.Allocator,
 
         pub const Slice = []T;
-        const Node = InnerType.Node;
-        const Iterator = InnerType.Iterator;
+        pub const Node = InnerType.Node;
+        pub const Iterator = InnerType.Iterator;
 
-        pub fn init(gpa: std.mem.Allocator) Self {
+        pub fn init(allocator: std.mem.Allocator) Self {
             return Self{
-                .inner = InnerType.init(),
-                .allocator = gpa,
+                .inner = InnerType.init(allocator),
             };
         }
 
         pub fn deinit(self: *Self) void {
-            var it: ?*InnerType.Node = self.inner.first();
-
-            while (it) |element| {
-                it = element.next();
-                self.allocator.destroy(element);
-            }
-
             self.inner.deinit();
         }
 
         pub fn append(self: *Self, item: T) std.mem.Allocator.Error!void {
-            const node_ptr: *Node = try self.allocator.create(Node);
-            node_ptr.value = item;
-            self.inner.append(node_ptr);
+            try self.inner.append(item);
         }
 
         pub fn prepend(self: *Self, item: T) std.mem.Allocator.Error!void {
-            const item_ptr: *T = try self.allocator.create(T);
-            item_ptr.* = item;
-            self.inner.prepend(item_ptr);
+            try self.inner.prepend(item);
         }
 
         pub fn appendSlice(self: *Self, items: []const T) std.mem.Allocator.Error!void {
@@ -51,25 +37,11 @@ pub fn StackManaged(comptime T: type) type {
         }
 
         pub fn popLast(self: *Self) ?T {
-            const result = self.inner.popLast();
-
-            if (result) |node| {
-                const value = node.value;
-                self.allocator.destroy(node);
-                return value;
-            }
-            return null;
+            return self.inner.popLast();
         }
 
         pub fn popFirst(self: *Self) ?T {
-            const result = self.inner.popFirst();
-
-            if (result) |node| {
-                const value = node.value;
-                self.allocator.destroy(node);
-                return value;
-            }
-            return null;
+            return self.inner.popLast();
         }
 
         pub fn empty(self: *Self) bool {
@@ -82,7 +54,6 @@ pub fn StackManaged(comptime T: type) type {
 
         pub fn remove(self: *Self, node: *Node) void {
             self.inner.remove(node);
-            self.allocator.destroy(node);
         }
     };
 }

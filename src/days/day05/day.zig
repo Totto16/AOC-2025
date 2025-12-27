@@ -180,6 +180,11 @@ const LoopState = union(enum) {
     LoopStateReiterate,
 };
 
+fn removeNodeFromIt(it: *utils.StackManaged(IdRange).Iterator, stack: *utils.StackManaged(IdRange), node: *utils.StackManaged(IdRange).Node) void {
+    stack.remove(node);
+    it.invalidate();
+}
+
 fn mergeRanges(allocator: utils.Allocator, ranges: *utils.ListManaged(IdRange)) utils.SolveErrors!void {
     var toCompareStack: utils.StackManaged(IdRange) = utils.StackManaged(IdRange).init(allocator);
     defer toCompareStack.deinit();
@@ -199,7 +204,7 @@ fn mergeRanges(allocator: utils.Allocator, ranges: *utils.ListManaged(IdRange)) 
 
             var it = toCompareStack.iter();
 
-            modified: while (it.next()) |range2_node| {
+            modified: while (it.next_node()) |range2_node| {
                 const range2 = range2_node.value;
                 const overlapState = getOverlapState(range1, range2);
 
@@ -207,7 +212,7 @@ fn mergeRanges(allocator: utils.Allocator, ranges: *utils.ListManaged(IdRange)) 
                     .OverlapStateNone => {},
                     .OverlapStateIn => {
                         // removes range2, as this is a unnecessary range
-                        toCompareStack.remove(range2_node);
+                        removeNodeFromIt(&it, &toCompareStack, range2_node);
                         // this invalidates it, so redo this, by adding range1 to the stack again
 
                         std.debug.assert(range1.first <= range2.first);
@@ -219,7 +224,7 @@ fn mergeRanges(allocator: utils.Allocator, ranges: *utils.ListManaged(IdRange)) 
                     .OverlapStateEnd => {
                         const range1mod = IdRange{ .first = range1.first, .last_exclusive = range2.last_exclusive };
                         // removes range2, as this is a unnecessary range
-                        toCompareStack.remove(range2_node);
+                        removeNodeFromIt(&it, &toCompareStack, range2_node);
 
                         std.debug.assert(range1.first <= range2.first);
                         std.debug.assert(range1.last_exclusive <= range2.last_exclusive);
@@ -230,7 +235,7 @@ fn mergeRanges(allocator: utils.Allocator, ranges: *utils.ListManaged(IdRange)) 
                     .OverlapStateStart => {
                         const range1mod = IdRange{ .first = range2.first, .last_exclusive = range1.last_exclusive };
                         // removes range2, as this is a unnecessary range
-                        toCompareStack.remove(range2_node);
+                        removeNodeFromIt(&it, &toCompareStack, range2_node);
 
                         std.debug.assert(range1.first >= range2.first);
                         std.debug.assert(range1.last_exclusive >= range2.last_exclusive);
