@@ -33,8 +33,8 @@ pub fn DoublyLinkedList(comptime T: type) type {
         pub const Iterator = struct {
             current: ?*Node,
 
-            pub fn init(value: Self) Iterator {
-                return Iterator{ .current = value.first() };
+            pub fn init(self: Self) Iterator {
+                return Iterator{ .current = self.first() };
             }
 
             pub fn next(self: *Iterator) ?*Node {
@@ -123,6 +123,112 @@ pub fn DoublyLinkedList(comptime T: type) type {
 
         pub fn remove(self: *Self, node: *Node) void {
             return self.inner.remove(untyped_node_from_typed(node));
+        }
+    };
+}
+
+pub fn DoublyLinkedListManaged(comptime T: type) type {
+    return struct {
+        const Self = @This();
+
+        const InnerType = DoublyLinkedList(T);
+
+        const Node = InnerType.Node;
+
+        inner: InnerType,
+        alloc: std.mem.Allocator,
+
+        pub fn init(allocator: std.mem.Allocator) Self {
+            return Self{
+                .inner = InnerType.init(),
+                .alloc = allocator,
+            };
+        }
+
+        pub fn deinit(self: *Self) void {
+            while (self.inner.popLast()) |item| {
+                self.alloc.destroy(item);
+            }
+        }
+
+        pub fn first(self: *const Self) ?Node {
+            if (self.inner.first()) |f| {
+                return f.*;
+            }
+
+            return null;
+        }
+
+        pub fn last(self: *const Self) ?Node {
+            if (self.inner.last()) |l| {
+                return l.*;
+            }
+
+            return null;
+        }
+
+        pub fn append(self: *Self, item: T) std.mem.Allocator.Error!void {
+            const managed_node: *Node = try self.allocator.create(Node);
+            managed_node.value = item;
+            self.inner.append(managed_node);
+        }
+
+        pub fn pop(self: *Self) ?Node {
+            const result = self.inner.pop();
+
+            if (result) |node| {
+                const value = node.*;
+                self.allocator.destroy(node);
+                return value;
+            }
+            return null;
+        }
+
+        pub fn popFirst(self: *Self) ?Node {
+            const result = self.inner.popFirst();
+
+            if (result) |node| {
+                const value = node.*;
+                self.allocator.destroy(node);
+                return value;
+            }
+            return null;
+        }
+
+        pub fn prepend(self: *Self, item: T) void {
+            const managed_node: *Node = try self.allocator.create(Node);
+            managed_node.value = item;
+            self.inner.prepend(managed_node);
+        }
+
+        pub fn empty(self: *const Self) bool {
+            return self.inner.empty();
+        }
+
+        pub const Iterator = struct {
+            inner: InnerType.Iterator,
+
+            pub fn init(self: Self) Iterator {
+                return Iterator{
+                    .inner = self.inner.iter(),
+                };
+            }
+
+            pub fn next(self: *Iterator) ?Node {
+                if (self.inner.next()) |node| {
+                    const next_node = node.next();
+                    self.current = next_node;
+                    return node.*;
+                }
+
+                return null;
+            }
+        };
+
+        pub fn iter(self: *Self) Iterator {
+            return Iterator{
+                .inner = self.inner.iter(),
+            };
         }
     };
 }

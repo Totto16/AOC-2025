@@ -2,6 +2,7 @@ const std = @import("std");
 const tty = @import("tty");
 const day = @import("day.zig");
 const stack = @import("stack.zig");
+const double_linked_list = @import("double_linked_list.zig");
 
 // Add utility functions here
 
@@ -54,3 +55,5 @@ pub const DayOptions = day.DayOptions;
 pub const SolveCategory = day.SolveCategory;
 
 pub const StackManaged = stack.StackManaged;
+
+pub const DoublyLinkedListManaged = double_linked_list.DoublyLinkedListManaged;

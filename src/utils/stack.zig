@@ -1,6 +1,7 @@
 const double_linked_list = @import("double_linked_list.zig");
 const std = @import("std");
 
+//TODO: some memory management is duplicated in DoublyLinkedListManaged
 pub fn StackManaged(comptime T: type) type {
     return struct {
         const Self = @This();
