@@ -67,7 +67,7 @@ pub fn JoltageState(comptime MAX_JOLTAGE_STATE_SIZE: comptime_int) type {
 }
 
 fn cmpButtonWirings(ctx: void, buttons1: ButtonWiring, buttons2: ButtonWiring) bool {
-    return utils.desc(usize)(ctx, buttons1.wirings.items.len, buttons2.wirings.items.len);
+    return utils.asc(usize)(ctx, buttons1.wirings.items.len, buttons2.wirings.items.len);
 }
 
 const Machine = struct {
@@ -218,7 +218,7 @@ fn parseMachines(allocator: utils.Allocator, input: utils.Str) utils.SolveErrors
             return utils.SolveErrors.ParseError;
         }
 
-        // this helps, as "better" buttons get pressed first in the BFS!
+        // this helps, as "better" buttons get pressed first in the BFS and this helps in part 02!
         utils.sort(ButtonWiring, button_wirings.items, {}, cmpButtonWirings);
 
         const machine = Machine{ .button_wirings = button_wirings, .lights = lights, .joltages = joltages };
@@ -523,20 +523,6 @@ fn isZero(comptime Type: type, value: Type) bool {
     }
 }
 
-fn maxValue(comptime Type: type) Type {
-    switch (@typeInfo(Type)) {
-        .int => |_| {
-            return std.math.maxInt(Type);
-        },
-        .float => |_| {
-            return std.math.inf(Type);
-        },
-        else => {
-            @compileError("Not supported type for maxValue: " ++ @typeInfo(Type));
-        },
-    }
-}
-
 fn pivotValue(comptime Type: type) Type {
     switch (@typeInfo(Type)) {
         .int => |_| {
@@ -546,7 +532,7 @@ fn pivotValue(comptime Type: type) Type {
             return @as(Type, 1.0);
         },
         else => {
-            @compileError("Not supported type for maxValue: " ++ @typeInfo(Type));
+            @compileError("Not supported type for pivotValue: " ++ @typeInfo(Type));
         },
     }
 }
@@ -771,6 +757,44 @@ fn Matrix(comptime Type: type) type {
             return true;
         }
 
+        const ScoreVal: type = i64;
+
+        // this is the basis for a good solving, as we try to score good options > 0 and bad options < 0, the better ones are higher, even the bas ones
+        fn getScoreForRow(self: *const Self, pivot: usize, current_row: usize) ScoreVal {
+            std.debug.assert(self.row_len > 1);
+            const row = self.content[current_row][0 .. self.row_len - 1];
+
+            var result: ScoreVal = 0; // neutral
+
+            for (row, 0..) |r, i| {
+                if (i == pivot) {
+                    if (isZero(Type, r)) {
+                        // really bad, return immediately the worst value
+                        return std.math.minInt(ScoreVal);
+                    } else {
+                        result += 10 * std.math.pow(u63, 10, @as(u63, @intCast(i)) + 1);
+                    }
+                } else if (i < pivot) {
+                    // before pivot, 0 means GOOD, non zero means bad
+                    if (isZero(Type, r)) {
+                        result += 10 * std.math.pow(u63, 10, @as(u63, @intCast(i)) + 1);
+                    } else {
+                        // bad, so reset to minimum, so that it cant get better than a perfect one
+                        result = std.math.minInt(ScoreVal);
+                    }
+                } else {
+                    // after pivot, not that important, but still, more zeroes is better
+                    if (isZero(Type, r)) {
+                        result += 10 * std.math.pow(u63, 3, @as(u63, @intCast(i)) + 1);
+                    } else {
+                        result -= 10 * std.math.pow(u63, 3, @as(u63, @intCast(i)) + 1);
+                    }
+                }
+            }
+
+            return result;
+        }
+
         //TODO: support pivots like 100 | 001, so not perfectly aligned, as the matrix is not square, and also the last ones can be 0000
 
         pub fn solve(self: *Self, allocator: utils.Allocator) utils.SolveErrors!Equations {
@@ -782,22 +806,19 @@ fn Matrix(comptime Type: type) type {
 
             // perform operation 1 until we have the best matrix
 
-            //TODO: make this more robust an better, make best pivots!
             for (0..self.content.len) |r1| {
-                var best_row: ?usize = r1;
-                var best_val = maxValue(T);
+                var best_row: ?usize = null;
 
+                // "score" of best option so far, as options get a value based on their usefullness in this row
+                var best_score: ScoreVal = std.math.minInt(ScoreVal);
+
+                // search every row r2 for the best row for r1
                 for (r1..self.content.len) |r2| {
-                    const cont = self.content[r1][r1];
-                    if (isZero(T, cont)) {
-                        // not a good canditate
-                    } else {
-                        // try to reach "1" (bestValue), by just seeing if it is that or better
-                        // note: here it is fine to use >= also for floats, as this is always 1 or 0 as per the start, afterwards this can go to 1.000000...04  or 0.999...6 or similar as per floating point imprecisions
-                        if (cont < best_val and cont >= pivotValue(T)) {
-                            best_row = r2;
-                            best_val = cont;
-                        }
+                    const score = self.getScoreForRow(r1, r2);
+
+                    if (score > best_score) {
+                        best_score = score;
+                        best_row = r2;
                     }
                 }
 
