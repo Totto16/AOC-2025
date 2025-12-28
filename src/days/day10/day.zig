@@ -35,6 +35,47 @@ fn UIntFromBits(comptime bits: comptime_int) type {
     return std.meta.Int(.unsigned, bits);
 }
 
+pub fn JoltageState(comptime MAX_JOLTAGE_STATE_SIZE: comptime_int) type {
+    return struct {
+        const Self = @This();
+
+        const T = UIntFromBits(MAX_JOLTAGE_STATE_SIZE);
+
+        const ListType = utils.List(T);
+
+        inner: ListType,
+        alloc: utils.Allocator,
+
+        pub fn init(allocator: utils.Allocator) Self {
+            return .{
+                .inner = ListType.empty,
+                .alloc = allocator,
+            };
+        }
+
+        pub fn deinit(self: *Self) void {
+            self.inner.deinit(self.alloc);
+        }
+
+        pub fn allocateExactly(self: *Self, new_capacity: usize) std.mem.Allocator.Error!void {
+            try self.inner.ensureTotalCapacityPrecise(self.alloc, new_capacity);
+            self.inner.expandToCapacity();
+        }
+
+        pub fn append(self: *Self, item: T) std.mem.Allocator.Error!void {
+            try self.inner.append(self.alloc, item);
+        }
+
+        pub fn len(self: *const Self) usize {
+            return self.inner.items.len;
+        }
+
+        pub fn items(self: *Self) []T {
+            return self.inner.items;
+        }
+    };
+}
+
 const Machine = struct {
     indicators: utils.ListManaged(Indicator),
     button_wirings: utils.ListManaged(ButtonWiring),
@@ -73,6 +114,19 @@ const Machine = struct {
             if (indicator.light == .on) {
                 result = result | @as(UIntFromBits(MAX_STATE), 1) << @intCast(i);
             }
+        }
+
+        return result;
+    }
+
+    pub fn getJoltages(self: *const Machine, comptime MAX_STATE: comptime_int, allocator: utils.Allocator) utils.SolveErrors!JoltageState(MAX_STATE) {
+        var result: JoltageState(MAX_STATE) = JoltageState(MAX_STATE).init(allocator);
+
+        for (
+            self.indicators.items,
+        ) |indicator| {
+            const value: UIntFromBits(MAX_STATE) = std.math.cast(UIntFromBits(MAX_STATE), indicator.joltage) orelse return utils.SolveErrors.PredicateNotMet;
+            try result.append(value);
         }
 
         return result;
@@ -271,6 +325,7 @@ fn BfsOne(comptime MAX_STATE: comptime_int, comptime MAX_DEPTH: comptime_int) ty
 
 const MAX_BUTTON_SIZE: comptime_int = 16;
 const MAX_BFS_DEPTH_SIZE: comptime_int = 16;
+const MAX_JOLTAGE_SIZE: comptime_int = MAX_BUTTON_SIZE;
 
 fn solveForFewestLightPresses(allocator: utils.Allocator, machine: Machine) utils.SolveErrors!u64 {
     const compact_buttons = try machine.compactButtons(allocator, MAX_BUTTON_SIZE);
@@ -309,21 +364,188 @@ fn solveFirst(allocator: utils.Allocator, input: utils.Str) utils.SolveResult {
     return utils.Solution{ .u64 = sum };
 }
 
-fn solveSecond(allocator: utils.Allocator, input: utils.Str) utils.SolveResult {
-    _ = allocator;
-    _ = input;
+fn BfsTwo(comptime MAX_STATE: comptime_int, comptime MAX_DEPTH: comptime_int, comptime MAX_JOLTAGE_STATE_SIZE: comptime_int) type {
+    const BitType: type = UIntFromBits(MAX_STATE);
+    const DepthType: type = UIntFromBits(MAX_DEPTH);
+
+    return struct {
+        const Self = @This();
+
+        const JoltageStateT = JoltageState(MAX_JOLTAGE_STATE_SIZE);
+
+        alloc: utils.Allocator,
+        buttons: []const BitType,
+        items: utils.DoublyLinkedListManaged(Self.State),
+
+        const State = struct {
+            depth: DepthType,
+            joltage_state: JoltageStateT,
+            invalid_buttons_mask: BitType,
+        };
+
+        pub fn init(allocator: utils.Allocator, buttons: []const BitType) Self {
+            return .{
+                .alloc = allocator,
+                .buttons = buttons,
+                .items = utils.DoublyLinkedListManaged(Self.State).init(allocator),
+            };
+        }
+
+        pub fn deinit(self: *Self) void {
+            self.items.deinit();
+        }
+
+        pub fn push(self: *Self, state: Self.State) std.mem.Allocator.Error!void {
+            try self.items.append(state);
+        }
+
+        const ButtonResult = union(enum) {
+            not_pressable_again,
+            finished,
+            next_state: JoltageStateT,
+        };
+
+        fn pushButton(self: *Self, button: BitType, state: JoltageStateT) std.mem.Allocator.Error!ButtonResult {
+            var next_state: JoltageStateT = JoltageStateT.init(self.alloc);
+
+            const state_len = state.len();
+
+            try next_state.allocateExactly(state_len);
+
+            var all_zeros: bool = true;
+
+            for (0..state_len) |i| {
+                const current_state = state.items()[i];
+                if (shouldPress(button, i)) {
+                    if (current_state == 0) {
+                        next_state.deinit();
+                        return .not_pressable_again;
+                    } else if (current_state != 1) {
+                        all_zeros = false;
+                    }
+
+                    next_state.items[i] = current_state - 1;
+                } else {
+                    next_state.items[i] = current_state;
+                }
+            }
+
+            if (all_zeros) {
+                next_state.deinit();
+                return .finished;
+            }
+
+            return .{ .next_state = next_state };
+        }
+
+        fn shouldPress(button_mask: BitType, index: usize) bool {
+            return button_mask & (@as(BitType, 1) << @intCast(index)) != 0;
+        }
+
+        fn notPressableAgain(button_mask: BitType, index: usize) bool {
+            return button_mask & (@as(BitType, 1) << @intCast(index)) != 0;
+        }
+
+        pub fn step(self: *Self) utils.SolveErrors!?DepthType {
+            const maybe_state = self.items.popFirst();
+
+            if (maybe_state) |state| {
+                for (self.buttons, 0..) |button, i| {
+                    if (notPressableAgain(state.invalid_buttons_mask, i)) {
+                        continue;
+                    }
+
+                    const button_result = try self.pushButton(button, state.joltage_state);
+                    const next_depth = state.depth + 1;
+
+                    switch (button_result) {
+                        .finished => return next_depth,
+                        .next_state => |next_state| {
+                            const new_state = Self.State{
+                                .depth = next_depth,
+                                .joltage_state = next_state,
+                                .invalid_buttons_mask = state.invalid_buttons_mask,
+                            };
+
+                            try self.push(new_state);
+                        },
+                        .not_pressable_again => {
+                            // push a new bfs node, were we never push that button again, so that we need fewer "forks" in the next iteration, depth remains the same, as we didn't press any button!
+
+                            //TODO: maybe we miss the fewest presses, by doing this here
+
+                            const new_invalid_buttons_mask = state.invalid_buttons_mask | @as(UIntFromBits(MAX_STATE), 1) << @intCast(i);
+
+                            const new_state = Self.State{
+                                .depth = state.depth,
+                                .joltage_state = state.joltage_state,
+                                .invalid_buttons_mask = new_invalid_buttons_mask,
+                            };
+
+                            try self.push(new_state);
+                        },
+                    }
+                }
+
+                return null;
+            }
+            return utils.SolveErrors.NotSolved;
+        }
+    };
+}
+
+fn solveForFewestJoltagePresses(allocator: utils.Allocator, machine: Machine) utils.SolveErrors!u64 {
+    const compact_buttons = try machine.compactButtons(allocator, MAX_BUTTON_SIZE);
+    defer allocator.free(compact_buttons);
+
+    var joltage_state = try machine.getJoltages(MAX_JOLTAGE_SIZE, allocator);
+    defer joltage_state.deinit();
+
+    const BFS = BfsTwo(MAX_BUTTON_SIZE, MAX_BFS_DEPTH_SIZE, MAX_JOLTAGE_SIZE);
+
+    var bfs: BFS = BFS.init(allocator, compact_buttons);
+    defer bfs.deinit();
+
+    try bfs.push(BFS.State{ .depth = 0, .joltage_state = joltage_state, .invalid_buttons_mask = 0 });
+
+    while (true) {
+        if (try bfs.step()) |result| {
+            return result;
+        }
+    }
 
     return utils.SolveErrors.NotSolved;
+}
+
+fn solveSecond(allocator: utils.Allocator, input: utils.Str) utils.SolveResult {
+    var machines = try parseMachines(allocator, input);
+    defer machines.deinit();
+
+    var sum: u64 = 0;
+
+    for (machines.underlying.items) |machine| {
+        const result = try solveForFewestJoltagePresses(allocator, machine);
+
+        sum += result;
+    }
+
+    return utils.Solution{ .u64 = sum };
 }
 
 const generated = @import("generated");
 
 pub const day = utils.Day{
     .solver = utils.Solver{ .individual = .{ .first = solveFirst, .second = solveSecond } },
-    .solutions = .{ .first = .{ .implemented = .{
-        .solution = .{ .u64 = 7 },
-        .real_value = .{ .u64 = 417 },
-    } }, .second = .pending },
+    .solutions = .{
+        .first = .{ .implemented = .{
+            .solution = .{ .u64 = 7 },
+            .real_value = .{ .u64 = 417 },
+        } },
+        .second = .{ .implemented = .{
+            .solution = .{ .u64 = 33 },
+            .real_value = null,
+        } },
+    },
     .inputs = .both_same,
     .root = generated.root,
     .num = generated.num,
