@@ -508,13 +508,14 @@ fn DfsTwo(comptime MAX_STATE: comptime_int, comptime MAX_DEPTH: comptime_int, co
         }
     };
 }
+
 fn isZero(comptime Type: type, value: Type) bool {
     switch (@typeInfo(Type)) {
         .int => |_| {
             return value == @as(Type, 0);
         },
         .float => |_| {
-            return @abs(value) < std.math.floatEps(Type);
+            return @abs(value) <= std.math.floatEps(Type);
         },
         else => {
             @compileError("Not supported type for isZero: " ++ @typeInfo(Type));
@@ -536,7 +537,7 @@ fn maxValue(comptime Type: type) Type {
     }
 }
 
-fn bestValue(comptime Type: type) Type {
+fn pivotValue(comptime Type: type) Type {
     switch (@typeInfo(Type)) {
         .int => |_| {
             return @as(Type, 1);
@@ -557,7 +558,7 @@ fn floatIsNearInt(comptime Type: type, value: Type) ?Type {
         },
         .float => |_| {
             const rounded = std.math.round(value);
-            const is_an_int = @abs(rounded - value) < std.math.floatEpsAt(Type, value);
+            const is_an_int = @abs(rounded - value) <= std.math.floatEpsAt(Type, value);
             if (is_an_int) {
                 return rounded;
             }
@@ -565,6 +566,20 @@ fn floatIsNearInt(comptime Type: type, value: Type) ?Type {
         },
         else => {
             @compileError("Not supported type for floatIsNearInt: " ++ @typeInfo(Type));
+        },
+    }
+}
+
+fn isPivotValue(comptime Type: type, value: Type) bool {
+    switch (@typeInfo(Type)) {
+        .int => |_| {
+            return value == pivotValue(Type);
+        },
+        .float => |_| {
+            return @abs(value - pivotValue(Type)) <= std.math.floatEpsAt(Type, pivotValue(Type));
+        },
+        else => {
+            @compileError("Not supported type for isZero: " ++ @typeInfo(Type));
         },
     }
 }
@@ -677,6 +692,22 @@ fn Matrix(comptime Type: type) type {
             allocator.free(self.content);
         }
 
+        //formatter
+        pub fn format(self: *const Self, writer: *std.Io.Writer) !void {
+            try writer.print("Size: {}x{}\n", .{ self.row_len, self.content.len });
+
+            for (self.content) |c| {
+                try writer.writeByte('[');
+                for (c, 0..) |val, i| {
+                    if (i != 0) {
+                        try writer.writeAll(", ");
+                    }
+                    try writer.print("{}", .{val});
+                }
+                try writer.writeAll("]\n");
+            }
+        }
+
         // Gauss operation 1, Interchanging two rows
         fn gauss_op_1(self: *Self, row1: usize, row2: usize) void {
             std.debug.assert(row1 != row2);
@@ -688,7 +719,7 @@ fn Matrix(comptime Type: type) type {
 
         // Gauss operation 3, Adding a scalar multiple of one row to another
         fn gauss_op_3(self: *Self, row1: usize, row2: usize, scalar: T) void {
-            std.debug.assert(isZero(T, scalar));
+            std.debug.assert(!isZero(T, scalar));
 
             const row2_cont = self.content[row2];
 
@@ -743,13 +774,17 @@ fn Matrix(comptime Type: type) type {
         //TODO: support pivots like 100 | 001, so not perfectly aligned, as the matrix is not square, and also the last ones can be 0000
 
         pub fn solve(self: *Self, allocator: utils.Allocator) utils.SolveErrors!Equations {
+            std.debug.print("SOLVE INIT\n", .{});
+            std.debug.print("Matrix: {f}\n", .{self});
 
             // solving the equations using  Gaussian_elimination:
             // see: https://en.wikipedia.org/wiki/Gaussian_elimination
 
             // perform operation 1 until we have the best matrix
+
+            //TODO: make this more robust an better, make best pivots!
             for (0..self.content.len) |r1| {
-                var best_row: usize = r1;
+                var best_row: ?usize = r1;
                 var best_val = maxValue(T);
 
                 for (r1..self.content.len) |r2| {
@@ -759,7 +794,7 @@ fn Matrix(comptime Type: type) type {
                     } else {
                         // try to reach "1" (bestValue), by just seeing if it is that or better
                         // note: here it is fine to use >= also for floats, as this is always 1 or 0 as per the start, afterwards this can go to 1.000000...04  or 0.999...6 or similar as per floating point imprecisions
-                        if (cont < best_val and cont >= bestValue(T)) {
+                        if (cont < best_val and cont >= pivotValue(T)) {
                             best_row = r2;
                             best_val = cont;
                         }
@@ -768,10 +803,15 @@ fn Matrix(comptime Type: type) type {
 
                 // found best row for this and now swap it, if it's possible
 
-                if (r1 != best_row) {
-                    self.gauss_op_1(r1, best_row);
+                if (best_row) |b_row| {
+                    if (r1 != b_row) {
+                        self.gauss_op_1(r1, b_row);
+                    }
                 }
             }
+
+            std.debug.print("SOLVE OPER 1 finished\n", .{});
+            std.debug.print("Matrix: {f}\n", .{self});
 
             // perform op 3 until we have upper echelon form, triangular form
             // skip op 2, as we already have 1s in the places, given by the fact, that we have 0 or 1 before each prefix!
@@ -806,15 +846,25 @@ fn Matrix(comptime Type: type) type {
                         continue;
                     }
 
-                    // if we are at the pivot, try to make it 1, this only works for columns after the first one, as we only can use previous columns!
-                    if (row_selected == column_selected) {
+                    // if we are at or before the pivot, try to make it 1 / 0, this only works for columns after the first one, as we only can use previous columns!
+                    if (row_selected <= column_selected) {
                         std.debug.assert(column_selected != 0);
+
+                        const isPivot = row_selected == column_selected;
+
+                        const target: Type = if (isPivot) pivotValue(Type) else @as(Type, 0);
 
                         const needs_value = self.content[column_selected][row_selected];
 
                         blk2: {
-                            if (needs_value == @as(Type, 1)) {
-                                break :blk2;
+                            if (isPivot) {
+                                if (isPivotValue(Type, needs_value)) {
+                                    break :blk2;
+                                }
+                            } else {
+                                if (isZero(Type, needs_value)) {
+                                    break :blk2;
+                                }
                             }
 
                             var compatible_row: ?CompatibleRow = null;
@@ -824,9 +874,13 @@ fn Matrix(comptime Type: type) type {
                                     loop1: for (0..column_selected) |c| {
                                         const current_val = self.content[c][row_selected];
 
+                                        if (isZero(Type, current_val)) {
+                                            continue;
+                                        }
+
                                         const divResult = std.math.divFloor(
                                             Type,
-                                            needs_value - 1,
+                                            needs_value - target,
                                             current_val,
                                         ) catch {
                                             std.debug.panic("div wrong, this is an implementation error", .{});
@@ -850,12 +904,17 @@ fn Matrix(comptime Type: type) type {
                                     loop1: for (0..column_selected) |c| {
                                         const current_val = self.content[c][row_selected];
 
+                                        if (isZero(Type, current_val)) {
+                                            continue;
+                                        }
+
                                         const divResult = std.math.divFloor(
                                             Type,
-                                            needs_value - 1,
+                                            needs_value - target,
                                             current_val,
-                                        ) orelse {
+                                        ) catch {
                                             std.debug.panic("div wrong, this is an implementation error", .{});
+                                            unreachable;
                                         };
 
                                         std.debug.assert(divResult >= 0);
@@ -883,7 +942,15 @@ fn Matrix(comptime Type: type) type {
                                 self.gauss_op_3(column_selected, c_row.idx, -c_row.scalar);
                                 std.debug.assert(self.content[column_selected][row_selected] == 1);
                             } else {
-                                std.debug.panic("Altough the strict requirement for upper echelon form doesn't need a 1 pivot, we need it here!", .{});
+                                std.debug.print("Matrix: {f}\n", .{self});
+
+                                std.debug.print("No row found to make the resulting value {} with gauss operation 3\n", .{target});
+                                if (isPivot) {
+                                    std.debug.panic("Although the strict requirement for upper echelon form doesn't need a 1 pivot, we need it here!", .{});
+                                } else {
+                                    std.debug.panic("Not possible to reach 0\n", .{});
+                                }
+                                unreachable;
                             }
                         }
 
@@ -924,13 +991,35 @@ fn Matrix(comptime Type: type) type {
     };
 }
 
-const MatrixType: type = i64;
-
 pub fn get_bit_at(button: UIntFromBits(MAX_BUTTON_SIZE), index: usize) bool {
     return button & (@as(UIntFromBits(MAX_BUTTON_SIZE), 1) << @intCast(index)) != 0;
 }
 
-pub fn MatrixfromMachine(allocator: utils.Allocator, buttons: []const UIntFromBits(MAX_BUTTON_SIZE), joltages: utils.ListManaged(JoltageNum)) utils.SolveErrors!Matrix(MatrixType) {
+pub fn castType(comptime Type: type, value: anytype) ?Type {
+    switch (@typeInfo(Type)) {
+        .int => |_| {
+            return std.math.cast(Type, value);
+        },
+        .float => |_| {
+            switch (@typeInfo(@TypeOf(value))) {
+                .int => |_| {
+                    return @as(Type, @floatFromInt(value));
+                },
+                .float => |_| {
+                    return @as(Type, value);
+                },
+                else => {
+                    @compileError("Not supported type for castType:" ++ @typeInfo(Type) ++ " to " ++ @typeInfo(@TypeOf(value)));
+                },
+            }
+        },
+        else => {
+            @compileError("Not supported type for castType: " ++ @typeInfo(Type));
+        },
+    }
+}
+
+pub fn MatrixfromMachine(comptime MatrixType: type, allocator: utils.Allocator, buttons: []const UIntFromBits(MAX_BUTTON_SIZE), joltages: utils.ListManaged(JoltageNum)) utils.SolveErrors!Matrix(MatrixType) {
     const row_len = buttons.len + 1;
     const col_len = joltages.items.len;
 
@@ -941,7 +1030,7 @@ pub fn MatrixfromMachine(allocator: utils.Allocator, buttons: []const UIntFromBi
 
         for (0..row_len) |r| {
             if (r + 1 == row_len) {
-                content[c][r] = std.math.cast(MatrixType, joltages.items[c]) orelse return utils.SolveErrors.PredicateNotMet;
+                content[c][r] = castType(MatrixType, joltages.items[c]) orelse return utils.SolveErrors.PredicateNotMet;
             } else {
                 content[c][r] = if (get_bit_at(buttons[r], c)) 1 else 0;
             }
@@ -951,12 +1040,16 @@ pub fn MatrixfromMachine(allocator: utils.Allocator, buttons: []const UIntFromBi
     return Matrix(MatrixType).init(content);
 }
 
+const MatrixTypeUsed: type = i64;
+
 fn solveForFewestJoltagePresses(allocator: utils.Allocator, machine: Machine) utils.SolveErrors!u64 {
     const compact_buttons = try machine.compactButtons(allocator, MAX_BUTTON_SIZE);
     defer allocator.free(compact_buttons);
 
-    var matrix = try MatrixfromMachine(allocator, compact_buttons, machine.joltages);
+    var matrix = try MatrixfromMachine(MatrixTypeUsed, allocator, compact_buttons, machine.joltages);
     defer matrix.deinit(allocator);
+
+    std.debug.print("MATRIX INIT\n", .{});
 
     var equations = try matrix.solve(allocator);
     defer equations.deinit(allocator);
