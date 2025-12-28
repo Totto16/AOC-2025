@@ -62,16 +62,24 @@ pub fn JoltageState(comptime MAX_JOLTAGE_STATE_SIZE: comptime_int) type {
             self.inner.expandToCapacity();
         }
 
+        pub fn dupe(self: *const Self) std.mem.Allocator.Error!Self {
+            var result = Self.init(self.alloc);
+
+            try result.allocateExactly(self.inner.items.len);
+
+            for (0..self.inner.items.len) |i| {
+                result.inner.items[i] = self.inner.items[i];
+            }
+
+            return result;
+        }
+
         pub fn append(self: *Self, item: T) std.mem.Allocator.Error!void {
             try self.inner.append(self.alloc, item);
         }
 
         pub fn len(self: *const Self) usize {
             return self.inner.items.len;
-        }
-
-        pub fn items(self: *Self) []T {
-            return self.inner.items;
         }
     };
 }
@@ -381,6 +389,10 @@ fn BfsTwo(comptime MAX_STATE: comptime_int, comptime MAX_DEPTH: comptime_int, co
             depth: DepthType,
             joltage_state: JoltageStateT,
             invalid_buttons_mask: BitType,
+
+            pub fn deinit(self: *State) void {
+                self.joltage_state.deinit();
+            }
         };
 
         pub fn init(allocator: utils.Allocator, buttons: []const BitType) Self {
@@ -392,11 +404,20 @@ fn BfsTwo(comptime MAX_STATE: comptime_int, comptime MAX_DEPTH: comptime_int, co
         }
 
         pub fn deinit(self: *Self) void {
+            var it = self.items.iter();
+
+            while (it.next_node()) |node| {
+                node.value.deinit();
+            }
             self.items.deinit();
         }
 
         pub fn push(self: *Self, state: Self.State) std.mem.Allocator.Error!void {
             try self.items.append(state);
+        }
+
+        pub fn pop(self: *Self) ?Self.State {
+            return self.items.popFirst();
         }
 
         const ButtonResult = union(enum) {
@@ -409,13 +430,14 @@ fn BfsTwo(comptime MAX_STATE: comptime_int, comptime MAX_DEPTH: comptime_int, co
             var next_state: JoltageStateT = JoltageStateT.init(self.alloc);
 
             const state_len = state.len();
+            std.debug.assert(state_len != 0);
 
             try next_state.allocateExactly(state_len);
 
             var all_zeros: bool = true;
 
             for (0..state_len) |i| {
-                const current_state = state.items()[i];
+                const current_state = state.inner.items[i];
                 if (shouldPress(button, i)) {
                     if (current_state == 0) {
                         next_state.deinit();
@@ -424,9 +446,13 @@ fn BfsTwo(comptime MAX_STATE: comptime_int, comptime MAX_DEPTH: comptime_int, co
                         all_zeros = false;
                     }
 
-                    next_state.items[i] = current_state - 1;
+                    next_state.inner.items[i] = current_state - 1;
                 } else {
-                    next_state.items[i] = current_state;
+                    if (current_state != 0) {
+                        all_zeros = false;
+                    }
+
+                    next_state.inner.items[i] = current_state;
                 }
             }
 
@@ -447,9 +473,11 @@ fn BfsTwo(comptime MAX_STATE: comptime_int, comptime MAX_DEPTH: comptime_int, co
         }
 
         pub fn step(self: *Self) utils.SolveErrors!?DepthType {
-            const maybe_state = self.items.popFirst();
+            var maybe_state = self.pop();
 
-            if (maybe_state) |state| {
+            if (maybe_state) |*state| {
+                defer state.deinit();
+
                 for (self.buttons, 0..) |button, i| {
                     if (notPressableAgain(state.invalid_buttons_mask, i)) {
                         continue;
@@ -472,13 +500,13 @@ fn BfsTwo(comptime MAX_STATE: comptime_int, comptime MAX_DEPTH: comptime_int, co
                         .not_pressable_again => {
                             // push a new bfs node, were we never push that button again, so that we need fewer "forks" in the next iteration, depth remains the same, as we didn't press any button!
 
-                            //TODO: maybe we miss the fewest presses, by doing this here
+                            //TODO: maybe we miss the fewest presses, by doing this here and not insert it before the actual new states
 
                             const new_invalid_buttons_mask = state.invalid_buttons_mask | @as(UIntFromBits(MAX_STATE), 1) << @intCast(i);
 
                             const new_state = Self.State{
                                 .depth = state.depth,
-                                .joltage_state = state.joltage_state,
+                                .joltage_state = try state.joltage_state.dupe(),
                                 .invalid_buttons_mask = new_invalid_buttons_mask,
                             };
 
@@ -498,8 +526,7 @@ fn solveForFewestJoltagePresses(allocator: utils.Allocator, machine: Machine) ut
     const compact_buttons = try machine.compactButtons(allocator, MAX_BUTTON_SIZE);
     defer allocator.free(compact_buttons);
 
-    var joltage_state = try machine.getJoltages(MAX_JOLTAGE_SIZE, allocator);
-    defer joltage_state.deinit();
+    const joltage_state = try machine.getJoltages(MAX_JOLTAGE_SIZE, allocator);
 
     const BFS = BfsTwo(MAX_BUTTON_SIZE, MAX_BFS_DEPTH_SIZE, MAX_JOLTAGE_SIZE);
 
@@ -523,9 +550,11 @@ fn solveSecond(allocator: utils.Allocator, input: utils.Str) utils.SolveResult {
 
     var sum: u64 = 0;
 
+    std.debug.print("{s}\n", .{input});
+
     for (machines.underlying.items) |machine| {
         const result = try solveForFewestJoltagePresses(allocator, machine);
-
+        std.debug.print("GOT RESULT: {}\n", .{result});
         sum += result;
     }
 
