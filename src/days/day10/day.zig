@@ -16,11 +16,6 @@ const LightState = enum(u8) {
 
 const JoltageNum = u64;
 
-const Indicator = struct {
-    light: LightState,
-    joltage: JoltageNum,
-};
-
 const ButtonWiringNum = u16;
 
 const ButtonWiring = struct {
@@ -71,8 +66,14 @@ pub fn JoltageState(comptime MAX_JOLTAGE_STATE_SIZE: comptime_int) type {
     };
 }
 
+fn cmpButtonWirings(ctx: void, buttons1: ButtonWiring, buttons2: ButtonWiring) bool {
+    return utils.desc(usize)(ctx, buttons1.wirings.items.len, buttons2.wirings.items.len);
+}
+
 const Machine = struct {
-    indicators: utils.ListManaged(Indicator),
+    lights: utils.ListManaged(LightState),
+    joltages: utils.ListManaged(JoltageNum),
+
     button_wirings: utils.ListManaged(ButtonWiring),
 
     pub fn deinit(self: *const Machine) void {
@@ -81,14 +82,15 @@ const Machine = struct {
         }
         self.button_wirings.deinit();
 
-        self.indicators.deinit();
+        self.lights.deinit();
+        self.joltages.deinit();
     }
 
     pub fn compactButtons(self: *const Machine, allocator: utils.Allocator, comptime MAX_STATE: comptime_int) utils.SolveErrors![]UIntFromBits(MAX_STATE) {
-        var buttons: []UIntFromBits(MAX_STATE) = try allocator.alloc(UIntFromBits(MAX_STATE), self.button_wirings.items.len);
+        var buttons: []UIntFromBits(MAX_STATE) = try allocator.alignedAlloc(UIntFromBits(MAX_STATE), std.mem.Alignment.of(UIntFromBits(MAX_STATE)), self.button_wirings.items.len);
 
         for (self.button_wirings.items, 0..) |b, i| {
-            std.debug.assert(self.button_wirings.items.len <= MAX_STATE);
+            std.debug.assert(b.wirings.items.len <= MAX_STATE);
             var result: UIntFromBits(MAX_STATE) = @as(UIntFromBits(MAX_STATE), 0);
 
             for (b.wirings.items) |wiring| {
@@ -101,12 +103,12 @@ const Machine = struct {
     }
 
     pub fn compactLights(self: *const Machine, comptime MAX_STATE: comptime_int) UIntFromBits(MAX_STATE) {
-        std.debug.assert(self.indicators.items.len <= MAX_STATE);
+        std.debug.assert(self.lights.items.len <= MAX_STATE);
 
         var result: UIntFromBits(MAX_STATE) = @as(UIntFromBits(MAX_STATE), 0);
 
-        for (self.indicators.items, 0..) |indicator, i| {
-            if (indicator.light == .on) {
+        for (self.lights.items, 0..) |light, i| {
+            if (light == .on) {
                 result = result | @as(UIntFromBits(MAX_STATE), 1) << @intCast(i);
             }
         }
@@ -115,10 +117,10 @@ const Machine = struct {
     }
 
     pub fn getJoltages(self: *const Machine, comptime MAX_STATE: comptime_int, allocator: utils.Allocator) utils.SolveErrors!JoltageState(MAX_STATE) {
-        var result: JoltageState(MAX_STATE) = try JoltageState(MAX_STATE).init(allocator, self.indicators.items.len);
+        var result: JoltageState(MAX_STATE) = try JoltageState(MAX_STATE).init(allocator, self.joltages.items.len);
 
-        for (self.indicators.items, 0..) |indicator, i| {
-            const value: UIntFromBits(MAX_STATE) = std.math.cast(UIntFromBits(MAX_STATE), indicator.joltage) orelse return utils.SolveErrors.PredicateNotMet;
+        for (self.joltages.items, 0..) |joltage, i| {
+            const value: UIntFromBits(MAX_STATE) = std.math.cast(UIntFromBits(MAX_STATE), joltage) orelse return utils.SolveErrors.PredicateNotMet;
             result.items[i] = value;
         }
 
@@ -216,20 +218,10 @@ fn parseMachines(allocator: utils.Allocator, input: utils.Str) utils.SolveErrors
             return utils.SolveErrors.ParseError;
         }
 
-        var indicators: utils.ListManaged(Indicator) = utils.ListManaged(Indicator).init(allocator);
+        // this helps, as "better" buttons get pressed first in the BFS!
+        utils.sort(ButtonWiring, button_wirings.items, {}, cmpButtonWirings);
 
-        const indicators_len = lights.items.len;
-
-        try indicators.ensureTotalCapacity(indicators_len);
-
-        for (0..indicators_len) |i| {
-            try indicators.append(Indicator{ .light = lights.items[i], .joltage = joltages.items[i] });
-        }
-
-        lights.deinit();
-        joltages.deinit();
-
-        const machine = Machine{ .button_wirings = button_wirings, .indicators = indicators };
+        const machine = Machine{ .button_wirings = button_wirings, .lights = lights, .joltages = joltages };
 
         try machines.underlying.append(machine);
     }
