@@ -41,45 +41,32 @@ pub fn JoltageState(comptime MAX_JOLTAGE_STATE_SIZE: comptime_int) type {
 
         const T = UIntFromBits(MAX_JOLTAGE_STATE_SIZE);
 
-        const ListType = utils.List(T);
-
-        inner: ListType,
+        items: []T,
         alloc: utils.Allocator,
 
-        pub fn init(allocator: utils.Allocator) Self {
+        pub fn init(allocator: utils.Allocator, size: usize) std.mem.Allocator.Error!Self {
             return .{
-                .inner = ListType.empty,
+                .items = try allocator.alignedAlloc(T, std.mem.Alignment.of(T), size),
                 .alloc = allocator,
             };
         }
 
         pub fn deinit(self: *Self) void {
-            self.inner.deinit(self.alloc);
-        }
-
-        pub fn allocateExactly(self: *Self, new_capacity: usize) std.mem.Allocator.Error!void {
-            try self.inner.ensureTotalCapacityPrecise(self.alloc, new_capacity);
-            self.inner.expandToCapacity();
+            self.alloc.free(self.items);
         }
 
         pub fn dupe(self: *const Self) std.mem.Allocator.Error!Self {
-            var result = Self.init(self.alloc);
+            var result = try Self.init(self.alloc, self.items.len);
 
-            try result.allocateExactly(self.inner.items.len);
-
-            for (0..self.inner.items.len) |i| {
-                result.inner.items[i] = self.inner.items[i];
+            for (0..self.items.len) |i| {
+                result.items[i] = self.items[i];
             }
 
             return result;
         }
 
-        pub fn append(self: *Self, item: T) std.mem.Allocator.Error!void {
-            try self.inner.append(self.alloc, item);
-        }
-
         pub fn len(self: *const Self) usize {
-            return self.inner.items.len;
+            return self.items.len;
         }
     };
 }
@@ -128,13 +115,11 @@ const Machine = struct {
     }
 
     pub fn getJoltages(self: *const Machine, comptime MAX_STATE: comptime_int, allocator: utils.Allocator) utils.SolveErrors!JoltageState(MAX_STATE) {
-        var result: JoltageState(MAX_STATE) = JoltageState(MAX_STATE).init(allocator);
+        var result: JoltageState(MAX_STATE) = try JoltageState(MAX_STATE).init(allocator, self.indicators.items.len);
 
-        for (
-            self.indicators.items,
-        ) |indicator| {
+        for (self.indicators.items, 0..) |indicator, i| {
             const value: UIntFromBits(MAX_STATE) = std.math.cast(UIntFromBits(MAX_STATE), indicator.joltage) orelse return utils.SolveErrors.PredicateNotMet;
-            try result.append(value);
+            result.items[i] = value;
         }
 
         return result;
@@ -427,17 +412,15 @@ fn BfsTwo(comptime MAX_STATE: comptime_int, comptime MAX_DEPTH: comptime_int, co
         };
 
         fn pushButton(self: *Self, button: BitType, state: JoltageStateT) std.mem.Allocator.Error!ButtonResult {
-            var next_state: JoltageStateT = JoltageStateT.init(self.alloc);
-
             const state_len = state.len();
             std.debug.assert(state_len != 0);
 
-            try next_state.allocateExactly(state_len);
+            var next_state: JoltageStateT = try JoltageStateT.init(self.alloc, state_len);
 
             var all_zeros: bool = true;
 
             for (0..state_len) |i| {
-                const current_state = state.inner.items[i];
+                const current_state = state.items[i];
                 if (shouldPress(button, i)) {
                     if (current_state == 0) {
                         next_state.deinit();
@@ -446,13 +429,13 @@ fn BfsTwo(comptime MAX_STATE: comptime_int, comptime MAX_DEPTH: comptime_int, co
                         all_zeros = false;
                     }
 
-                    next_state.inner.items[i] = current_state - 1;
+                    next_state.items[i] = current_state - 1;
                 } else {
                     if (current_state != 0) {
                         all_zeros = false;
                     }
 
-                    next_state.inner.items[i] = current_state;
+                    next_state.items[i] = current_state;
                 }
             }
 
