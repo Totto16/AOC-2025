@@ -756,16 +756,6 @@ fn Matrix(comptime Type: type) type {
             return true;
         }
 
-        fn isFreeVariable(self: *const Self, row_idx: usize) bool {
-            for (0..self.content.len) |c| {
-                const val = self.content[c][row_idx];
-                if (!isZero(T, val)) {
-                    return false;
-                }
-            }
-            return true;
-        }
-
         const ScoreVal: type = i64;
 
         // this is the basis for a good solving, as we try to score good options > 0 and bad options < 0, the better ones are higher, even the bas ones
@@ -1179,7 +1169,6 @@ fn Matrix(comptime Type: type) type {
                                 self.gauss_op_3(column_selected, c_row.idx, -c_row.scalar);
                                 std.debug.assert(self.content[column_selected][row_selected] == 0);
                             } else {
-                                std.debug.print("found NOTHING compatible for c {} row {}\n", .{ column_selected, row_selected });
                                 // ignore otherwise, the resulting equations will be harder, but it unfortunately is like this
 
                             }
@@ -1200,8 +1189,48 @@ fn Matrix(comptime Type: type) type {
 
             const variables = try allocator.alignedAlloc(VariableType, std.mem.Alignment.of(VariableType), variable_len);
 
-            for (0..variable_len) |row| {
-                variables[row] = if (self.isFreeVariable(row)) .free else .bound;
+            {
+                var current_variable: usize = 0;
+
+                var pivotOffset: usize = 0;
+
+                col_loop: for (0..self.content.len) |c| {
+                    for (0..self.row_len - 1) |r| {
+                        if (c + pivotOffset == r) {
+                            const value = self.content[c][r];
+
+                            if (isZero(Type, value)) {
+                                pivotOffset += 1;
+
+                                variables[current_variable] = .free;
+                                current_variable += 1;
+                            } else {
+                                variables[current_variable] = .bound;
+                                current_variable += 1;
+
+                                continue :col_loop;
+                            }
+                        }
+                    }
+                }
+
+                while (current_variable < variable_len) {
+                    variables[current_variable] = .free;
+                    current_variable += 1;
+                }
+
+                std.debug.assert(current_variable == variable_len);
+            }
+
+            if (@import("builtin").mode == .Debug) {
+                var bound_variables: usize = 0;
+                for (0..variable_len) |row| {
+                    if (variables[row] == .bound) {
+                        bound_variables += 1;
+                    }
+                }
+
+                std.debug.assert(bound_variables == self.content.len);
             }
 
             const equation_len = self.content.len;
