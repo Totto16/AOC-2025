@@ -496,7 +496,7 @@ fn DfsTwo(comptime MAX_STATE: comptime_int, comptime MAX_DEPTH: comptime_int, co
                             try self.push(new_state);
                         },
                         .not_pressable_again => {
-                            std.debug.panic("SHOULDN'T be reachable in the first place\n", .{});
+                            std.debug.panic("SHOULDN'T be reachable in the first place", .{});
                             unreachable;
                         },
                     }
@@ -714,13 +714,18 @@ fn Matrix(comptime Type: type) type {
             }
         }
 
-        fn rowIsUpperEchelonForm(self: *const Self, row: usize) bool {
+        fn rowIsUpperEchelonForm(self: *const Self, row: usize, pivotOffset: *usize) bool {
             for (0..self.row_len) |r| {
                 const cont = self.content[row][r];
-                if (row == r) { // this is a pivot
-                    // pivots just need to be non_zero
+                if (row + pivotOffset.* == r) { // this is a pivot
+
+                    // if we reached the pivot we are always in upper echelon form, if it is 0, we have a pivot offset here, but the next non zero value is the pivot, so all fine, we just need to increment the pivot Offset correctly
+
                     if (isZero(T, cont)) {
-                        return false;
+                        return true;
+                    } else {
+                        // but we need to check until the pivot value, to set the pivot offset correctly
+                        pivotOffset.* += 1;
                     }
                 } else if (r < row) {
                     // before the pivot all needs to be zero
@@ -731,6 +736,8 @@ fn Matrix(comptime Type: type) type {
                     // after the pivot!
                     // doesn't matter
 
+                    // so just return
+                    return true;
                 }
             }
 
@@ -738,8 +745,10 @@ fn Matrix(comptime Type: type) type {
         }
 
         fn isUpperEchelonForm(self: *const Self) bool {
+            var pivotOffset: usize = 0;
+
             for (0..self.content.len) |c| {
-                if (!self.rowIsUpperEchelonForm(c)) {
+                if (!self.rowIsUpperEchelonForm(c, &pivotOffset)) {
                     return false;
                 }
             }
@@ -795,8 +804,6 @@ fn Matrix(comptime Type: type) type {
             return result;
         }
 
-        //TODO: support pivots like 100 | 001, so not perfectly aligned, as the matrix is not square, and also the last ones can be 0000
-
         pub fn solve(self: *Self, allocator: utils.Allocator) utils.SolveErrors!Equations {
             std.debug.print("SOLVE INIT\n", .{});
             std.debug.print("Matrix: {f}\n", .{self});
@@ -836,73 +843,271 @@ fn Matrix(comptime Type: type) type {
 
             // perform op 3 until we have upper echelon form, triangular form
             // skip op 2, as we already have 1s in the places, given by the fact, that we have 0 or 1 before each prefix!
-            const normalize_result = blk: {
+            { // part 1, only zeros under the triangle
+                const lower_upper_echelon_form_result = blk_result: {
+                    var column_selected: usize = 0;
+                    var row_selected: usize = 0;
+
+                    var pivotOffset: usize = 0;
+
+                    while (true) {
+                        if (self.isUpperEchelonForm()) {
+                            break :blk_result true;
+                        }
+
+                        // if we are trying to process out of the matrix, we failed!
+                        if (column_selected >= self.content.len) {
+                            break :blk_result false;
+                        }
+
+                        if (column_selected == 0) {
+                            // special handling for row 0, as this can't change from other rows, but the pivot offset can change here
+
+                            if (row_selected > column_selected + pivotOffset) {
+                                column_selected = 1;
+                                row_selected = 0;
+                                continue;
+                            }
+
+                            const isPivot = row_selected == column_selected + pivotOffset;
+                            // the row 0 has always a pivot, as we move it one along an the row in that case too, other cases don#t make sense and are a programming error
+                            std.debug.assert(isPivot);
+
+                            const cont = self.content[column_selected][row_selected];
+
+                            if (isZero(Type, cont)) {
+                                // we need to check for another pivot
+                                pivotOffset += 1;
+                            }
+
+                            // we are not done, the next iteration decides that
+                            row_selected += 1;
+                            continue;
+                        }
+
+                        // if we are past the pivot for this line, ignore this and go to the next column
+                        if (row_selected > column_selected + pivotOffset) {
+                            column_selected += 1;
+                            row_selected = 0;
+
+                            { // assert that this row is in upper echelon form
+                                var pivotOffsetTest = pivotOffset;
+                                const result = self.rowIsUpperEchelonForm(column_selected - 1, &pivotOffsetTest);
+                                std.debug.assert(result);
+                                // assert, that we didn't need a pivot offset increment, as that should be done here in this loop, and this if should onl trigger AFTER every pivot + offset!
+                                std.debug.assert(pivotOffset == pivotOffsetTest);
+                            }
+                            continue;
+                        }
+
+                        // if we are at or before the pivot, try to make it 1 / 0, this only works for columns after the first one, as we only can use previous columns!
+                        if (row_selected <= column_selected + pivotOffset) {
+                            std.debug.assert(column_selected != 0);
+
+                            const isPivot = row_selected == column_selected + pivotOffset;
+
+                            const target: Type = if (isPivot) pivotValue(Type) else @as(Type, 0);
+
+                            const current_row_value = self.content[column_selected][row_selected];
+
+                            std.debug.print("c sel: {} row sel: {} isPiv: {}\n", .{ column_selected, row_selected, isPivot });
+
+                            blk_pivot_check: {
+                                if (isPivot) {
+                                    if (isPivotValue(Type, current_row_value)) {
+                                        break :blk_pivot_check;
+                                    }
+
+                                    if (isZero(Type, current_row_value)) {
+                                        // the pivots are offset from now on!
+                                        pivotOffset += 1;
+                                        break :blk_pivot_check;
+                                    }
+                                } else {
+                                    if (isZero(Type, current_row_value)) {
+                                        break :blk_pivot_check;
+                                    }
+                                }
+
+                                var compatible_row: ?CompatibleRow = null;
+
+                                switch (@typeInfo(Type)) {
+                                    .int => |_| {
+                                        loop1: for (0..column_selected) |c| {
+                                            const value_to_check = self.content[c][row_selected];
+
+                                            if (isZero(Type, value_to_check)) {
+                                                // not feasable, as 0 * scalar can't possible be the same as the desired value
+                                                continue;
+                                            }
+
+                                            const divResult = std.math.divFloor(
+                                                Type,
+                                                current_row_value - target,
+                                                value_to_check,
+                                            ) catch {
+                                                std.debug.panic("div wrong, this is an implementation error", .{});
+                                                unreachable;
+                                            };
+
+                                            std.debug.assert(divResult >= 0);
+
+                                            if (divResult == 0) {
+                                                // not really doable, go to the next one
+                                            } else {
+                                                compatible_row = CompatibleRow{
+                                                    .idx = c,
+                                                    .scalar = divResult,
+                                                };
+                                                break :loop1;
+                                            }
+                                        }
+                                    },
+                                    .float => |_| {
+                                        loop1: for (0..column_selected) |c| {
+                                            const value_to_check = self.content[c][row_selected];
+
+                                            if (isZero(Type, value_to_check)) {
+                                                // not feasable, as 0 * scalar can't possible be the same as the desired value
+                                                continue;
+                                            }
+
+                                            const divResult = std.math.divFloor(
+                                                Type,
+                                                current_row_value - target,
+                                                value_to_check,
+                                            ) catch {
+                                                std.debug.panic("div wrong, this is an implementation error", .{});
+                                                unreachable;
+                                            };
+
+                                            std.debug.assert(divResult >= 0);
+
+                                            if (isZero(T, divResult)) {
+                                                // not really doable, go to the next one
+                                            } else {
+                                                // only mark this compatible, if this float is near to an int, it would be doable all the time, but that is not rellay helpfull here
+                                                if (floatIsNearInt(T, divResult)) |int| {
+                                                    compatible_row = CompatibleRow{
+                                                        .idx = c,
+                                                        .scalar = int,
+                                                    };
+                                                }
+                                                break :loop1;
+                                            }
+                                        }
+                                    },
+                                    else => {
+                                        @compileError("Not supported type for Matrix: " ++ @typeInfo(Type));
+                                    },
+                                }
+
+                                if (compatible_row) |c_row| {
+                                    self.gauss_op_3(column_selected, c_row.idx, -c_row.scalar);
+                                    std.debug.assert(self.content[column_selected][row_selected] == 1);
+                                } else {
+                                    std.debug.print("Matrix: {f}\n", .{self});
+
+                                    std.debug.print("No row found to make the resulting value {} with gauss operation 3\n", .{target});
+                                    if (isPivot) {
+                                        std.debug.panic("Although the strict requirement for upper echelon form doesn't need a 1 pivot, we need it here!", .{});
+                                    } else {
+                                        std.debug.panic("Not possible to reach 0", .{});
+                                    }
+                                    unreachable;
+                                }
+                            }
+
+                            // even if this goes past the pivot, that is caught in the next iteration of this
+                            row_selected += 1;
+                            continue;
+                        }
+                    }
+                };
+
+                if (!lower_upper_echelon_form_result) {
+                    std.debug.print("Failed to bring the matrix into upper echelon form: {any}\n", .{self.content});
+                    return utils.SolveErrors.NotSolved;
+                }
+            }
+
+            std.debug.print("SOLVE PART 1 finished\n", .{});
+            std.debug.print("Matrix: {f}\n", .{self});
+
+            blk_done: { // part 2, try to get zeros in the upper triangle
+
                 var column_selected: usize = 0;
                 var row_selected: usize = 0;
 
+                var pivotOffset: usize = 0;
+
                 while (true) {
-                    if (self.isUpperEchelonForm()) {
-                        break :blk true;
-                    }
-
-                    // if we are trying to process out of the matrix, we failed!
+                    // if we are trying to process out of the matrix, we are done
                     if (column_selected >= self.content.len) {
-                        break :blk false;
+                        break :blk_done;
                     }
 
-                    if (column_selected == 0) {
-                        // normally we should try to get a 1 on this place, but we know, that it already is one!
-                        column_selected = 1;
-                        row_selected = 0;
-                        continue;
-                    }
-
-                    // if we are past the pivot for this line, ignore this and go to the next column
-                    if (row_selected > column_selected) {
+                    // if we are at the end of the row, (excluding the last values), go to the next line
+                    if (row_selected >= self.row_len - 1) {
                         column_selected += 1;
                         row_selected = 0;
-
-                        // assert that this row is in upper echelon form
-                        std.debug.assert(self.rowIsUpperEchelonForm(column_selected - 1));
                         continue;
                     }
 
-                    // if we are at or before the pivot, try to make it 1 / 0, this only works for columns after the first one, as we only can use previous columns!
-                    if (row_selected <= column_selected) {
-                        std.debug.assert(column_selected != 0);
+                    // if we are before the pivot for this line,
+                    if (row_selected < column_selected + pivotOffset) {
+                        row_selected += 1;
+                        continue;
+                    }
 
-                        const isPivot = row_selected == column_selected;
+                    // if we are at the pivot for this line, check if the pivot offset needs to be incremented
+                    if (row_selected == column_selected + pivotOffset) {
+                        const current_row_value = self.content[column_selected][row_selected];
 
-                        const target: Type = if (isPivot) pivotValue(Type) else @as(Type, 0);
+                        if (isZero(Type, current_row_value)) {
+                            // the pivots are offset from now on!
+                            pivotOffset += 1;
+                        }
 
-                        const needs_value = self.content[column_selected][row_selected];
+                        row_selected += 1;
+                        continue;
+                    }
 
-                        blk2: {
-                            if (isPivot) {
-                                if (isPivotValue(Type, needs_value)) {
-                                    break :blk2;
-                                }
-                            } else {
-                                if (isZero(Type, needs_value)) {
-                                    break :blk2;
-                                }
+                    // if we are after the pivot for this line, try to get the value to 0
+                    if (row_selected > column_selected + pivotOffset) {
+                        const current_row_value = self.content[column_selected][row_selected];
+
+                        blk_zero_check: {
+                            if (isZero(Type, current_row_value)) {
+                                break :blk_zero_check;
                             }
 
                             var compatible_row: ?CompatibleRow = null;
 
                             switch (@typeInfo(Type)) {
                                 .int => |_| {
-                                    loop1: for (0..column_selected) |c| {
-                                        const current_val = self.content[c][row_selected];
+                                    loop1: for (column_selected..self.content.len) |c| {
 
-                                        if (isZero(Type, current_val)) {
+                                        // check if this line can be used, as the values until now are all zeros, so that nothing before this changes
+                                        for (0..row_selected) |row_check_idx| {
+                                            const value_at_idx = self.content[c][row_check_idx];
+                                            if (!isZero(Type, value_at_idx)) {
+                                                // not usable
+                                                continue :loop1;
+                                            }
+                                        }
+
+                                        const value_to_check = self.content[c][row_selected];
+
+                                        if (isZero(Type, value_to_check)) {
+                                            // not feasible, as 0 * scalar can't possible be the same as the desired value
                                             continue;
                                         }
 
                                         const divResult = std.math.divFloor(
                                             Type,
-                                            needs_value - target,
-                                            current_val,
+                                            current_row_value,
+                                            value_to_check,
                                         ) catch {
                                             std.debug.panic("div wrong, this is an implementation error", .{});
                                             unreachable;
@@ -922,17 +1127,28 @@ fn Matrix(comptime Type: type) type {
                                     }
                                 },
                                 .float => |_| {
-                                    loop1: for (0..column_selected) |c| {
-                                        const current_val = self.content[c][row_selected];
+                                    loop1: for (column_selected..self.content.len) |c| {
 
-                                        if (isZero(Type, current_val)) {
+                                        // check if this line can be used, as the values until now are all zeros, so that nothing before this changes
+                                        for (0..row_selected) |row_check_idx| {
+                                            const value_at_idx = self.content[c][row_check_idx];
+                                            if (!isZero(Type, value_at_idx)) {
+                                                // not usable
+                                                continue :loop1;
+                                            }
+                                        }
+
+                                        const value_to_check = self.content[c][row_selected];
+
+                                        if (isZero(Type, value_to_check)) {
+                                            // not feasible, as 0 * scalar can't possible be the same as the desired value
                                             continue;
                                         }
 
                                         const divResult = std.math.divFloor(
                                             Type,
-                                            needs_value - target,
-                                            current_val,
+                                            current_row_value,
+                                            value_to_check,
                                         ) catch {
                                             std.debug.panic("div wrong, this is an implementation error", .{});
                                             unreachable;
@@ -961,17 +1177,11 @@ fn Matrix(comptime Type: type) type {
 
                             if (compatible_row) |c_row| {
                                 self.gauss_op_3(column_selected, c_row.idx, -c_row.scalar);
-                                std.debug.assert(self.content[column_selected][row_selected] == 1);
+                                std.debug.assert(self.content[column_selected][row_selected] == 0);
                             } else {
-                                std.debug.print("Matrix: {f}\n", .{self});
+                                std.debug.print("found NOTHING compatible for c {} row {}\n", .{ column_selected, row_selected });
+                                // ignore otherwise, the resulting equations will be harder, but it unfortunately is like this
 
-                                std.debug.print("No row found to make the resulting value {} with gauss operation 3\n", .{target});
-                                if (isPivot) {
-                                    std.debug.panic("Although the strict requirement for upper echelon form doesn't need a 1 pivot, we need it here!", .{});
-                                } else {
-                                    std.debug.panic("Not possible to reach 0\n", .{});
-                                }
-                                unreachable;
                             }
                         }
 
@@ -980,14 +1190,10 @@ fn Matrix(comptime Type: type) type {
                         continue;
                     }
                 }
-            };
-
-            if (!normalize_result) {
-                std.debug.print("Failed to bring the matrix into upper echelon form: {any}\n", .{self.content});
-                return utils.SolveErrors.NotSolved;
             }
 
-            //TODO: make everything 0 if possible after the pivot, that makes things easier
+            std.debug.print("SOLVE PART 2 finished\n", .{});
+            std.debug.print("Matrix: {f}\n", .{self});
 
             const variable_len = self.row_len - 1;
             std.debug.assert(variable_len > 0);
@@ -1061,13 +1267,11 @@ pub fn MatrixfromMachine(comptime MatrixType: type, allocator: utils.Allocator, 
     return Matrix(MatrixType).init(content);
 }
 
-const MatrixTypeUsed: type = i64;
-
-fn solveForFewestJoltagePresses(allocator: utils.Allocator, machine: Machine) utils.SolveErrors!u64 {
+fn solveForFewestJoltagePresses(comptime MatrixType: type, allocator: utils.Allocator, machine: Machine) utils.SolveErrors!u64 {
     const compact_buttons = try machine.compactButtons(allocator, MAX_BUTTON_SIZE);
     defer allocator.free(compact_buttons);
 
-    var matrix = try MatrixfromMachine(MatrixTypeUsed, allocator, compact_buttons, machine.joltages);
+    var matrix = try MatrixfromMachine(MatrixType, allocator, compact_buttons, machine.joltages);
     defer matrix.deinit(allocator);
 
     std.debug.print("MATRIX INIT\n", .{});
@@ -1099,7 +1303,7 @@ fn solveForFewestJoltagePresses(allocator: utils.Allocator, machine: Machine) ut
     return utils.SolveErrors.NotSolved;
 }
 
-fn solveSecond(allocator: utils.Allocator, input: utils.Str) utils.SolveResult {
+fn solveSecondImpl(comptime MatrixType: type, allocator: utils.Allocator, input: utils.Str) utils.SolveResult {
     var machines = try parseMachines(allocator, input);
     defer machines.deinit();
 
@@ -1108,12 +1312,19 @@ fn solveSecond(allocator: utils.Allocator, input: utils.Str) utils.SolveResult {
     std.debug.print("{s}\n", .{input});
 
     for (machines.underlying.items) |machine| {
-        const result = try solveForFewestJoltagePresses(allocator, machine);
+        const result = try solveForFewestJoltagePresses(MatrixType, allocator, machine);
         std.debug.print("GOT RESULT: {}\n", .{result});
         sum += result;
     }
 
     return utils.Solution{ .u64 = sum };
+}
+
+// I challenged myself to only use integers for the matrix operations, but also made the matrix type compatible with using floats (the comparisons need an epsilon there)
+const MatrixTypeUsed: type = i64;
+
+fn solveSecond(allocator: utils.Allocator, input: utils.Str) utils.SolveResult {
+    return solveSecondImpl(MatrixTypeUsed, allocator, input);
 }
 
 const generated = @import("generated");
