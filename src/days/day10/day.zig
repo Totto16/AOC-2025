@@ -1308,28 +1308,14 @@ fn solveForFewestJoltagePresses(comptime MatrixType: type, allocator: utils.Allo
     var equations = try matrix.solve(allocator);
     defer equations.deinit(allocator);
 
-    for (equations.variables, 0..) |v, i| {
-        std.debug.print("variable x_{} = {}\n", .{ i, v });
-    }
+    const DFS = DfsTwo(MAX_BUTTON_SIZE);
 
-    for (equations.equations, 0..) |eq, i| {
-        std.debug.print("eq {}: {any} = {}\n", .{ i, eq.depends, eq.result });
-    }
+    var dfs: DFS = DFS.init(allocator, compact_buttons, equations);
+    defer dfs.deinit();
 
-    // const DFS = DfsTwo(MAX_BUTTON_SIZE, MAX_BFS_DEPTH_SIZE, MAX_JOLTAGE_SIZE);
+    const result = try dfs.solve();
 
-    // var dfs: DFS = DFS.init(allocator, compact_buttons);
-    // defer dfs.deinit();
-
-    //  try dfs.push(BFS.State{ .depth = 0, .joltage_state = joltage_state, .invalid_buttons_mask = bfs.get_invalid_buttons_mask(0, joltage_state) });
-
-    // while (true) {
-    //     if (try bfs.step()) |result| {
-    //         return result;
-    //     }
-    // }
-
-    return utils.SolveErrors.NotSolved;
+    return utils.Solution{ .u64 = result };
 }
 
 fn solveSecondImpl(comptime MatrixType: type, allocator: utils.Allocator, input: utils.Str) utils.SolveResult {
