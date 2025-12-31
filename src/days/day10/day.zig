@@ -692,11 +692,20 @@ fn Matrix(comptime Type: type) type {
 
                 const result = row[eq_len];
 
-                const depends = try allocator.alignedAlloc(EquationVariable, std.mem.Alignment.of(EquationVariable), eq_len);
+                var depends_list: utils.ListManaged(EquationVariable) = utils.ListManaged(EquationVariable).init(allocator);
+                defer depends_list.deinit();
 
                 for (0..eq_len) |r| {
-                    depends[r] = EquationVariable{ .idx = r, .multiplier = row[r] };
+                    const mult = row[r];
+
+                    if (isZero(Type, mult)) {
+                        continue;
+                    }
+
+                    try depends_list.append(EquationVariable{ .idx = r, .multiplier = mult });
                 }
+
+                const depends = try depends_list.toOwnedSlice();
 
                 return Equation.init(depends, result);
             }
