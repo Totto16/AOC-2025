@@ -349,162 +349,222 @@ fn solveFirst(allocator: utils.Allocator, input: utils.Str) utils.SolveResult {
     return utils.Solution{ .u64 = sum };
 }
 
-fn DfsTwo(comptime MAX_STATE: comptime_int, comptime MAX_DEPTH: comptime_int, comptime MAX_JOLTAGE_STATE_SIZE: comptime_int) type {
+fn DfsTwo(comptime MAX_STATE: comptime_int, comptime MatrixType: type) type {
     const BitType: type = UIntFromBits(MAX_STATE);
-    const DepthType: type = UIntFromBits(MAX_DEPTH);
+    const MatrixT = Matrix(MatrixType);
+    const Eqs = MatrixT.Equations;
+    const SolveP = MatrixT.SolvePath;
 
     return struct {
         const Self = @This();
 
-        const JoltageStateT = JoltageState(MAX_JOLTAGE_STATE_SIZE);
-
         alloc: utils.Allocator,
         buttons: []const BitType,
-        items: utils.DoublyLinkedListManaged(Self.State),
+        equations: *const Eqs,
+        solve_path: *const SolveP,
+        max_joltage_value: JoltageNum,
 
         const State = struct {
-            depth: DepthType,
-            joltage_state: JoltageStateT,
-            invalid_buttons_mask: BitType,
+            free_variables: []const MatrixType,
+            min: u64,
 
-            pub fn deinit(self: *State) void {
-                self.joltage_state.deinit();
+            pub fn init(free_variables: []const MatrixType, min: u64) State {
+                return .{
+                    .free_variables = free_variables,
+                    .min = min,
+                };
+            }
+
+            pub fn get_new_value(self: *const State, allocator: utils.Allocator, value: MatrixType, min: u64) std.mem.Error!State {
+                var new_free_variables = try allocator.alignedAlloc(MatrixType, std.mem.Alignment.of(MatrixType), self.free_variables.len + 1);
+
+                for (0..self.free_variables.len) |i| {
+                    new_free_variables[i] = self.free_variables[i];
+                }
+
+                new_free_variables[self.free_variables.len] = value;
+
+                return State.init(new_free_variables, min);
+            }
+
+            pub fn deinit(self: *State, allocator: utils.Allocator) void {
+                allocator.free(self.free_variables);
             }
         };
 
-        pub fn init(allocator: utils.Allocator, buttons: []const BitType) Self {
+        pub fn init(allocator: utils.Allocator, buttons: []const BitType, equations: *const Eqs, solve_path: *const SolveP, max_joltage_value: JoltageNum) Self {
             return .{
                 .alloc = allocator,
                 .buttons = buttons,
-                .items = utils.DoublyLinkedListManaged(Self.State).init(allocator),
+                .equations = equations,
+                .solve_path = solve_path,
+                .max_joltage_value = max_joltage_value,
             };
         }
 
-        pub fn deinit(self: *Self) void {
-            var it = self.items.iter();
-
-            while (it.next_node()) |node| {
-                node.value.deinit();
-            }
-            self.items.deinit();
-        }
-
-        pub fn push(self: *Self, state: Self.State) std.mem.Allocator.Error!void {
-            try self.items.append(state);
-        }
-
-        pub fn pop(self: *Self) ?Self.State {
-            return self.items.popFirst();
-        }
-
-        const ButtonResult = union(enum) {
-            not_pressable_again,
-            finished,
-            next_state: JoltageStateT,
+        const SolvedVariable = union(enum) {
+            unknown,
+            value: MatrixType,
         };
 
-        pub fn is_button_finished(state: JoltageStateT, button: BitType) bool {
-            for (state.items, 0..) |current_state, i| {
-                if (shouldPress(button, i)) {
-                    if (current_state == 0) {
-                        return true;
-                    }
-                }
+        pub fn solve_equations(self: *const Self, state: *const State) utils.SolveErrors!?u64 {
+            var variables = try self.alloc.alignedAlloc(SolvedVariable, std.mem.Alignment.of(SolvedVariable), self.equations.variables.len);
+            defer self.alloc.free(variables);
+
+            for (0..self.equations.variables.len) |i| {
+                variables[i] = .unknown;
             }
 
-            return false;
-        }
-
-        pub fn get_invalid_buttons_mask(self: *const Self, start: BitType, state: JoltageStateT) BitType {
-            var result: BitType = start;
-
-            for (self.buttons, 0..) |button, i| {
-                const is_finished = is_button_finished(state, button);
-                if (is_finished) {
-                    result = result | @as(BitType, 1) << @intCast(i);
-                }
+            std.debug.assert(state.free_variables.len == self.solve_path.free_variables.len);
+            for (self.solve_path.free_variables, state.free_variables) |free_var_idx, free_var_value| {
+                variables[free_var_idx] = .{ .value = free_var_value };
             }
-            return result;
-        }
 
-        fn pushButton(self: *const Self, button: BitType, state: JoltageStateT) std.mem.Allocator.Error!ButtonResult {
-            const state_len = state.len();
-            std.debug.assert(state_len != 0);
+            var sum: u64 = utils.sum(MatrixType, state.free_variables);
 
-            var next_state: JoltageStateT = try JoltageStateT.init(self.alloc, state_len);
+            for (self.solve_path.solve_order) |solveable| {
+                const eq = self.equations.equations[solveable.eq_idx];
 
-            var all_zeros: bool = true;
+                var divide_after: ?MatrixType = null;
 
-            for (state.items, 0..) |current_state, i| {
-                if (shouldPress(button, i)) {
-                    if (current_state == 0) {
-                        next_state.deinit();
-                        return .not_pressable_again;
-                    } else if (current_state != 1) {
-                        all_zeros = false;
+                const rhs: MatrixType = -eq.result;
+
+                for (eq.depends) |dep| {
+                    if (dep.idx == solveable.var_idx) {
+                        switch (variables[dep.idx]) {
+                            .unknown => {
+                                if (divide_after != null) {
+                                    std.debug.print("Solve path was wrong, needed to solve one value per eq, but tried multiple!");
+                                    return utils.SolveErrors.OtherError;
+                                }
+
+                                divide_after = dep.multiplier;
+                            },
+                            .value => {
+                                std.debug.print("Solve path was wrong, variable that needed solving was already solved!");
+                                return utils.SolveErrors.OtherError;
+                            },
+                        }
+                    } else {
+                        switch (variables[dep.idx]) {
+                            .unknown => {
+                                std.debug.print("Solve path was wrong, variable that should be already solved was not solved yet!");
+                                return utils.SolveErrors.OtherError;
+                            },
+                            .value => |v| {
+                                rhs += v * dep.multiplier;
+                            },
+                        }
                     }
+                }
 
-                    next_state.items[i] = current_state - 1;
+                if (divide_after) |div_val| {
+                    //TODO: check if int and float are handled correctly
+
+                    const result = result_blk: {
+                        switch (@typeInfo(MatrixType)) {
+                            .int => |_| {
+                                if (isZero(MatrixType, div_val)) {
+                                    std.debug.print("divide should never be 0 here!");
+                                    return utils.SolveErrors.OtherError;
+                                }
+
+                                const rem = std.math.rem(
+                                    MatrixType,
+                                    rhs,
+                                    div_val,
+                                ) catch {
+                                    std.debug.panic("div wrong, this is an implementation error", .{});
+                                    unreachable;
+                                };
+
+                                if (rem != 0) {
+                                    // not a whole solution, return null to indicate that!
+                                    return null;
+                                }
+
+                                const result = rhs / div_val;
+
+                                break :result_blk result;
+                            },
+                            .float => |_| {
+                                if (isZero(MatrixType, div_val)) {
+                                    std.debug.print("divide should never be 0 here!");
+                                    return utils.SolveErrors.OtherError;
+                                }
+
+                                const result = rhs / div_val;
+
+                                if (floatIsNearInt(MatrixType, result)) {
+                                    // not a whole solution, return null to indicate that!
+                                    return null;
+                                }
+
+                                break :result_blk result;
+                            },
+                            else => {
+                                @compileError("Not supported type for Matrix: " ++ @typeInfo(MatrixType));
+                            },
+                        }
+                    };
+
+                    variables[solveable.var_idx] = .{ .value = result };
+                    sum += result;
+
+                    if (sum >= state.min) {
+                        return state.min;
+                    }
                 } else {
-                    if (current_state != 0) {
-                        all_zeros = false;
-                    }
-
-                    next_state.items[i] = current_state;
+                    std.debug.print("Solve path was wrong, needed to solve one value per eq, but got none!");
+                    return utils.SolveErrors.OtherError;
                 }
             }
 
-            if (all_zeros) {
-                next_state.deinit();
-                return .finished;
+            return sum;
+        }
+
+        pub fn solve_rec(self: *Self, state: *const State) utils.SolveErrors!?u64 {
+            std.debug.assert(self.solve_path.free_variables.len >= state.free_variables.len);
+
+            if (self.solve_path.free_variables.len == state.free_variables.len) {
+                return self.solve_equations(state);
             }
 
-            return .{ .next_state = next_state };
-        }
+            var min = state.min;
 
-        fn shouldPress(button_mask: BitType, index: usize) bool {
-            return button_mask & (@as(BitType, 1) << @intCast(index)) != 0;
-        }
+            const previous_sum = utils.sum(state.free_variables);
 
-        fn notPressableAgain(button_mask: BitType, index: usize) bool {
-            return button_mask & (@as(BitType, 1) << @intCast(index)) != 0;
-        }
+            for (0..self.max_joltage_value + 1) |free_variable_value| {
 
-        pub fn step(self: *Self) utils.SolveErrors!?DepthType {
-            var maybe_state = self.pop();
-
-            if (maybe_state) |*state| {
-                defer state.deinit();
-
-                for (self.buttons, 0..) |button, i| {
-                    if (notPressableAgain(state.invalid_buttons_mask, i)) {
-                        continue;
-                    }
-
-                    const button_result = try self.pushButton(button, state.joltage_state);
-                    const next_depth = state.depth + 1;
-
-                    switch (button_result) {
-                        .finished => return next_depth,
-                        .next_state => |next_state| {
-                            const new_state = Self.State{
-                                .depth = next_depth,
-                                .joltage_state = next_state,
-                                .invalid_buttons_mask = self.get_invalid_buttons_mask(state.invalid_buttons_mask, next_state),
-                            };
-
-                            try self.push(new_state);
-                        },
-                        .not_pressable_again => {
-                            std.debug.panic("SHOULDN'T be reachable in the first place", .{});
-                            unreachable;
-                        },
-                    }
+                // short circuit, the min can't get any better!
+                if (previous_sum + free_variable_value >= min) {
+                    break;
                 }
 
-                return null;
+                const next_state: State = state.get_new_value(self.alloc, free_variable_value, min);
+                defer next_state.deinit(self.alloc);
+
+                // note null means, this combination is no valid result, so just ignore it
+                const result = try self.solve_rec(next_state);
+
+                if (result) |res| {
+                    if (res < min) {
+                        min = res;
+                    }
+                }
             }
-            return utils.SolveErrors.NotSolved;
+
+            return min;
+        }
+
+        pub fn solve(self: *Self) utils.SolveErrors!?u64 {
+            var free_variables_value = [_]MatrixType{};
+
+            const state: State = State.init(&free_variables_value, std.math.maxInt(u64));
+
+            const result = try self.solve_rec(&state);
+
+            return result;
         }
     };
 }
@@ -635,6 +695,33 @@ fn Matrix(comptime Type: type) type {
             bound,
         };
 
+        const SolvedState = enum(u8) {
+            solved,
+            unknown,
+        };
+
+        const Solveable = struct {
+            eq_idx: usize,
+            var_idx: usize,
+        };
+
+        const SolvePath = struct {
+            free_variables: []usize,
+            solve_order: []Solveable,
+
+            pub fn init(free_variables: []usize, solve_order: []Solveable) SolvePath {
+                return .{
+                    .free_variables = free_variables,
+                    .solve_order = solve_order,
+                };
+            }
+
+            pub fn deinit(self: *Equations, allocator: utils.Allocator) void {
+                allocator.free(self.free_variables);
+                allocator.free(self.solve_order);
+            }
+        };
+
         const Equations = struct {
             variables: []VariableType, // map from idx to type
             equations: []Equation,
@@ -644,6 +731,92 @@ fn Matrix(comptime Type: type) type {
                     .variables = variables,
                     .equations = equations,
                 };
+            }
+
+            const IsEqSolveable = union(enum) {
+                no,
+                yes: usize,
+            };
+
+            pub fn get_solve_path(self: *Equations, allocator: utils.Allocator) utils.SolveErrors!?SolvePath {
+                var free_variables_list: utils.ListManaged(usize) = utils.ListManaged(usize).init(allocator);
+                defer free_variables_list.deinit();
+
+                var solve_order_list: utils.ListManaged(Solveable) = utils.ListManaged(Solveable).init(allocator);
+                defer solve_order_list.deinit();
+
+                const state: []SolvedState = try allocator.alignedAlloc(SolvedState, std.mem.Alignment.of(SolvedState), self.variables.len);
+                defer allocator.free(state);
+
+                for (self.variables, 0..) |variable, i| {
+                    if (variable == .free) {
+                        try free_variables_list.append(i);
+                        state[i] = .solved;
+                    } else {
+                        state[i] = .unknown;
+                    }
+                }
+
+                var equations_to_solve_idx: utils.ListManaged(usize) = utils.ListManaged(usize).init(allocator);
+                defer equations_to_solve_idx.deinit();
+
+                try equations_to_solve_idx.ensureTotalCapacityPrecise(self.equations.len);
+                equations_to_solve_idx.expandToCapacity();
+
+                for (0..self.equations.len) |i| {
+                    equations_to_solve_idx.items[i] = i;
+                }
+
+                while (equations_to_solve_idx.items.len != 0) {
+                    var made_progress = false;
+
+                    for_loop: for (equations_to_solve_idx.items) |eq_idx| {
+                        const eq = self.equations[eq_idx];
+
+                        const is_solveable: IsEqSolveable = blk: {
+                            var which_one: ?usize = null;
+
+                            for (eq.depends) |dep| {
+                                if (state[dep.idx] == .unknown) {
+                                    if (which_one == null) {
+                                        which_one = dep.idx;
+                                    } else {
+                                        break :blk .no;
+                                    }
+                                }
+                            }
+
+                            if (which_one) |which_idx| {
+                                break :blk .{ .yes = which_idx };
+                            } else {
+                                break :blk .no;
+                            }
+                        };
+
+                        switch (is_solveable) {
+                            .no => {},
+                            .yes => |var_idx| {
+                                state[eq_idx] = .solved;
+                                _ = equations_to_solve_idx.swapRemove(eq_idx);
+                                made_progress = true;
+
+                                //TODO: does every equation need to solve some variable, this data structure is correct if so, otherwise not!
+                                try solve_order_list.append(.{ .eq_idx = eq_idx, .var_idx = var_idx });
+                                break :for_loop;
+                            },
+                        }
+                    }
+
+                    // not solveable
+                    if (!made_progress) {
+                        return null;
+                    }
+                }
+
+                const free_variables = try free_variables_list.toOwnedSlice();
+                const solve_order = try solve_order_list.toOwnedSlice();
+
+                return SolvePath.init(free_variables, solve_order);
             }
 
             pub fn deinit(self: *Equations, allocator: utils.Allocator) void {
@@ -958,7 +1131,7 @@ fn Matrix(comptime Type: type) type {
                                             const value_to_check = self.content[c][row_selected];
 
                                             if (isZero(Type, value_to_check)) {
-                                                // not feasable, as 0 * scalar can't possible be the same as the desired value
+                                                // not feasible, as 0 * scalar can't possible be the same as the desired value
                                                 continue;
                                             }
 
@@ -1308,14 +1481,28 @@ fn solveForFewestJoltagePresses(comptime MatrixType: type, allocator: utils.Allo
     var equations = try matrix.solve(allocator);
     defer equations.deinit(allocator);
 
-    const DFS = DfsTwo(MAX_BUTTON_SIZE);
+    const maybe_solve_path = try equations.get_solve_path(allocator);
 
-    var dfs: DFS = DFS.init(allocator, compact_buttons, equations);
+    if (maybe_solve_path == null) {
+        return utils.SolveErrors.NotSolved;
+    }
+    const solve_path = maybe_solve_path.?;
+    defer solve_path.deinit();
+
+    const max_joltage_value = std.mem.max(JoltageNum, machine.joltages.items);
+
+    const DFS = DfsTwo(MAX_BUTTON_SIZE, MatrixType);
+
+    var dfs: DFS = DFS.init(allocator, compact_buttons, &equations, &solve_path, max_joltage_value);
     defer dfs.deinit();
 
     const result = try dfs.solve();
 
-    return utils.Solution{ .u64 = result };
+    if (result) |res| {
+        return utils.Solution{ .u64 = res };
+    }
+
+    return utils.SolveErrors.NotSolved;
 }
 
 fn solveSecondImpl(comptime MatrixType: type, allocator: utils.Allocator, input: utils.Str) utils.SolveResult {

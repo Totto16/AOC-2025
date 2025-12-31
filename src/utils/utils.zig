@@ -57,3 +57,12 @@ pub const SolveCategory = day.SolveCategory;
 pub const StackManaged = stack.StackManaged;
 
 pub const DoublyLinkedListManaged = double_linked_list.DoublyLinkedListManaged;
+
+pub fn sum(comptime T: type, values: []T) T {
+    var result: T = 0;
+    for (values) |value| {
+        result += value;
+    }
+
+    return result;
+}
