@@ -1165,7 +1165,9 @@ fn Matrix(comptime Type: type) type {
 
                                 switch (@typeInfo(Type)) {
                                     .int => |_| {
+                                        std.debug.print("column_selected {} row_selected {}\n", .{ column_selected, row_selected });
                                         loop1: for (0..column_selected) |c| {
+                                            std.debug.print("c {}\n", .{c});
                                             const value_to_check = self.content[c][row_selected];
 
                                             if (isZero(Type, value_to_check)) {
@@ -1173,26 +1175,39 @@ fn Matrix(comptime Type: type) type {
                                                 continue;
                                             }
 
-                                            const divResult = std.math.rem(
+                                            const remResult = std.math.rem(
                                                 Type,
                                                 current_row_value - target,
                                                 value_to_check,
                                             ) catch {
-                                                std.debug.panic("div wrong, this is an implementation error", .{});
+                                                std.debug.panic("rem wrong, this is an implementation error", .{});
                                                 unreachable;
                                             };
 
-                                            std.debug.print("{} / {} = {}\n", .{ current_row_value - target, value_to_check, divResult });
-                                            std.debug.assert(divResult >= 0);
+                                            std.debug.assert(remResult >= 0);
 
-                                            if (divResult == 0) {
-                                                // not really doable, go to the next one
-                                            } else {
-                                                compatible_row = CompatibleRow{
-                                                    .idx = c,
-                                                    .scalar = divResult,
+                                            if (remResult == 0) {
+                                                const divResult = std.math.divFloor(
+                                                    Type,
+                                                    current_row_value - target,
+                                                    value_to_check,
+                                                ) catch {
+                                                    std.debug.panic("div wrong, this is an implementation error", .{});
+                                                    unreachable;
                                                 };
+
+                                                if (divResult == 0) {
+                                                    // not really doable, go to the next one
+                                                } else {
+                                                    compatible_row = CompatibleRow{
+                                                        .idx = c,
+                                                        .scalar = divResult,
+                                                    };
+                                                    break :loop1;
+                                                }
                                                 break :loop1;
+                                            } else {
+                                                // not evenly divisible, so not doable
                                             }
                                         }
                                     },
@@ -1205,28 +1220,41 @@ fn Matrix(comptime Type: type) type {
                                                 continue;
                                             }
 
-                                            const divResult = std.math.divFloor(
+                                            const remResult = std.math.rem(
                                                 Type,
                                                 current_row_value - target,
                                                 value_to_check,
                                             ) catch {
-                                                std.debug.panic("div wrong, this is an implementation error", .{});
+                                                std.debug.panic("rem wrong, this is an implementation error", .{});
                                                 unreachable;
                                             };
 
-                                            std.debug.assert(divResult >= 0);
+                                            std.debug.assert(remResult >= 0);
 
-                                            if (isZero(T, divResult)) {
-                                                // not really doable, go to the next one
-                                            } else {
-                                                // only mark this compatible, if this float is near to an int, it would be doable all the time, but that is not rellay helpfull here
-                                                if (floatIsNearInt(T, divResult)) |int| {
-                                                    compatible_row = CompatibleRow{
-                                                        .idx = c,
-                                                        .scalar = int,
-                                                    };
+                                            if (isZero(T, remResult)) {
+                                                const divResult = std.math.divFloor(
+                                                    Type,
+                                                    current_row_value - target,
+                                                    value_to_check,
+                                                ) catch {
+                                                    std.debug.panic("div wrong, this is an implementation error", .{});
+                                                    unreachable;
+                                                };
+
+                                                if (isZero(T, divResult)) {
+                                                    // not really doable, go to the next one
+                                                } else {
+                                                    // only mark this compatible, if this float is near to an int, it would be doable all the time, but that is not rellay helpfull here
+                                                    if (floatIsNearInt(T, divResult)) |int| {
+                                                        compatible_row = CompatibleRow{
+                                                            .idx = c,
+                                                            .scalar = int,
+                                                        };
+                                                    }
+                                                    break :loop1;
                                                 }
-                                                break :loop1;
+                                            } else {
+                                                // not evenly divisible, so not doable
                                             }
                                         }
                                     },
@@ -1349,7 +1377,7 @@ fn Matrix(comptime Type: type) type {
                                             continue;
                                         }
 
-                                        const divResult = std.math.divFloor(
+                                        const remResult = std.math.rem(
                                             Type,
                                             current_row_value,
                                             value_to_check,
@@ -1358,16 +1386,30 @@ fn Matrix(comptime Type: type) type {
                                             unreachable;
                                         };
 
-                                        std.debug.assert(divResult >= 0);
+                                        std.debug.assert(remResult >= 0);
 
-                                        if (divResult == 0) {
-                                            // not really doable, go to the next one
-                                        } else {
-                                            compatible_row = CompatibleRow{
-                                                .idx = c,
-                                                .scalar = divResult,
+                                        if (remResult == 0) {
+                                            const divResult = std.math.divFloor(
+                                                Type,
+                                                current_row_value,
+                                                value_to_check,
+                                            ) catch {
+                                                std.debug.panic("div wrong, this is an implementation error", .{});
+                                                unreachable;
                                             };
+
+                                            if (divResult == 0) {
+                                                // not really doable, go to the next one
+                                            } else {
+                                                compatible_row = CompatibleRow{
+                                                    .idx = c,
+                                                    .scalar = divResult,
+                                                };
+                                                break :loop1;
+                                            }
                                             break :loop1;
+                                        } else {
+                                            // not evenly divisible, so not doable
                                         }
                                     }
                                 },
@@ -1390,28 +1432,41 @@ fn Matrix(comptime Type: type) type {
                                             continue;
                                         }
 
-                                        const divResult = std.math.divFloor(
+                                        const remResult = std.math.rem(
                                             Type,
                                             current_row_value,
                                             value_to_check,
                                         ) catch {
-                                            std.debug.panic("div wrong, this is an implementation error", .{});
+                                            std.debug.panic("rem wrong, this is an implementation error", .{});
                                             unreachable;
                                         };
 
-                                        std.debug.assert(divResult >= 0);
+                                        std.debug.assert(remResult >= 0);
 
-                                        if (isZero(T, divResult)) {
-                                            // not really doable, go to the next one
-                                        } else {
-                                            // only mark this compatible, if this float is near to an int, it would be doable all the time, but that is not rellay helpfull here
-                                            if (floatIsNearInt(T, divResult)) |int| {
-                                                compatible_row = CompatibleRow{
-                                                    .idx = c,
-                                                    .scalar = int,
-                                                };
+                                        if (isZero(T, remResult)) {
+                                            const divResult = std.math.divFloor(
+                                                Type,
+                                                current_row_value,
+                                                value_to_check,
+                                            ) catch {
+                                                std.debug.panic("div wrong, this is an implementation error", .{});
+                                                unreachable;
+                                            };
+
+                                            if (isZero(T, divResult)) {
+                                                // not really doable, go to the next one
+                                            } else {
+                                                // only mark this compatible, if this float is near to an int, it would be doable all the time, but that is not rellay helpfull here
+                                                if (floatIsNearInt(T, divResult)) |int| {
+                                                    compatible_row = CompatibleRow{
+                                                        .idx = c,
+                                                        .scalar = int,
+                                                    };
+                                                }
+                                                break :loop1;
                                             }
-                                            break :loop1;
+                                        } else {
+                                            // not evenly divisible, so not doable
                                         }
                                     }
                                 },
