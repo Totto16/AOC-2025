@@ -795,7 +795,7 @@ fn Matrix(comptime Type: type) type {
                 while (equations_to_solve_idx.items.len != 0) {
                     var made_progress = false;
 
-                    for_loop: for (equations_to_solve_idx.items) |eq_idx| {
+                    for_loop: for (equations_to_solve_idx.items, 0..) |eq_idx, eq_s_idx| {
                         const eq = self.equations[eq_idx];
 
                         const is_solveable: IsEqSolveable = blk: {
@@ -822,7 +822,7 @@ fn Matrix(comptime Type: type) type {
                             .no => {},
                             .yes => |var_idx| {
                                 state[eq_idx] = .solved;
-                                _ = equations_to_solve_idx.swapRemove(eq_idx);
+                                _ = equations_to_solve_idx.swapRemove(eq_s_idx);
                                 made_progress = true;
 
                                 //TODO: does every equation need to solve some variable, this data structure is correct if so, otherwise not!
@@ -958,7 +958,7 @@ fn Matrix(comptime Type: type) type {
 
                     // if we reached the pivot we are always in upper echelon form, if it is 0, we have a pivot offset here, but the next non zero value is the pivot, so all fine, we just need to increment the pivot Offset correctly
 
-                    if (isZero(T, cont)) {
+                    if (!isZero(T, cont)) {
                         return true;
                     } else {
                         // but we need to check until the pivot value, to set the pivot offset correctly
@@ -1087,6 +1087,8 @@ fn Matrix(comptime Type: type) type {
                             break :blk_result false;
                         }
 
+                        std.debug.print("row at start: {} {any}\n", .{ column_selected, self.content[column_selected] });
+
                         if (column_selected == 0) {
                             // special handling for row 0, as this can't change from other rows, but the pivot offset can change here
 
@@ -1121,8 +1123,13 @@ fn Matrix(comptime Type: type) type {
                                 var pivotOffsetTest = pivotOffset;
                                 const result = self.rowIsUpperEchelonForm(column_selected - 1, &pivotOffsetTest);
                                 std.debug.assert(result);
-                                // assert, that we didn't need a pivot offset increment, as that should be done here in this loop, and this if should onl trigger AFTER every pivot + offset!
-                                std.debug.assert(pivotOffset == pivotOffsetTest);
+                                // assert, that we didn't need a pivot offset increment, as that should be done here in this loop, and this if should only trigger AFTER every pivot + offset!
+
+                                if (pivotOffset != pivotOffsetTest) {
+                                    std.debug.print("row: {any}\n", .{self.content[column_selected - 1]});
+                                    std.debug.panic("is upper echelon form shouldn't have to need to increment the pivotOffset!", .{});
+                                    unreachable;
+                                }
                             }
                             continue;
                         }
@@ -1136,8 +1143,6 @@ fn Matrix(comptime Type: type) type {
                             const target: Type = if (isPivot) pivotValue(Type) else @as(Type, 0);
 
                             const current_row_value = self.content[column_selected][row_selected];
-
-                            std.debug.print("c sel: {} row sel: {} isPiv: {}\n", .{ column_selected, row_selected, isPivot });
 
                             blk_pivot_check: {
                                 if (isPivot) {
@@ -1164,11 +1169,11 @@ fn Matrix(comptime Type: type) type {
                                             const value_to_check = self.content[c][row_selected];
 
                                             if (isZero(Type, value_to_check)) {
-                                                // not feasable, as 0 * scalar can't possible be the same as the desired value
+                                                // not feasible, as 0 * scalar can't possible be the same as the desired value
                                                 continue;
                                             }
 
-                                            const divResult = std.math.divFloor(
+                                            const divResult = std.math.rem(
                                                 Type,
                                                 current_row_value - target,
                                                 value_to_check,
@@ -1177,6 +1182,7 @@ fn Matrix(comptime Type: type) type {
                                                 unreachable;
                                             };
 
+                                            std.debug.print("{} / {} = {}\n", .{ current_row_value - target, value_to_check, divResult });
                                             std.debug.assert(divResult >= 0);
 
                                             if (divResult == 0) {
@@ -1230,8 +1236,20 @@ fn Matrix(comptime Type: type) type {
                                 }
 
                                 if (compatible_row) |c_row| {
+                                    std.debug.print("row before gauss_op_3: r_{} - {} * r_{} = {any} - {any}\n", .{ column_selected, c_row.scalar, c_row.idx, self.content[column_selected], self.content[c_row.idx] });
+
                                     self.gauss_op_3(column_selected, c_row.idx, -c_row.scalar);
-                                    std.debug.assert(self.content[column_selected][row_selected] == 1);
+                                    std.debug.print("row after gauss_op_3: r_{} - {} * r_{} = {any} - {any}\n", .{ column_selected, c_row.scalar, c_row.idx, self.content[column_selected], self.content[c_row.idx] });
+
+                                    { // assert that the result is as expected
+                                        const result = self.content[column_selected][row_selected];
+
+                                        if (isPivot) {
+                                            std.debug.assert(isPivotValue(Type, result));
+                                        } else {
+                                            std.debug.assert(isZero(Type, result));
+                                        }
+                                    }
                                 } else {
                                     std.debug.print("Matrix: {f}\n", .{self});
 
