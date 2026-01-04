@@ -410,6 +410,8 @@ fn DfsTwo(comptime MAX_STATE: comptime_int, comptime MatrixType: type) type {
         };
 
         pub fn solve_equations(self: *const Self, state: *const State) utils.SolveErrors!?u64 {
+            std.debug.print("solve equations:\n{f}\n", .{self.equations});
+
             var variables = try self.alloc.alignedAlloc(SolvedVariable, std.mem.Alignment.of(SolvedVariable), self.equations.variables.len);
             defer self.alloc.free(variables);
 
@@ -424,115 +426,119 @@ fn DfsTwo(comptime MAX_STATE: comptime_int, comptime MatrixType: type) type {
 
             var sum: u64 = utils.sum(u64, state.free_variables);
 
-            for (self.solve_path.solve_order) |solveable| {
-                const eq = self.equations.equations[solveable.eq_idx];
+            for (self.solve_path.solve_order) |solveable_un| {
+                switch (solveable_un) {
+                    .already_solved => {
+                        //TODO: do we need to do something here?
+                    },
+                    .solve_with => |solveable| {
+                        const eq = self.equations.equations[solveable.eq_idx];
 
-                var divide_after: ?MatrixType = null;
+                        var divide_after: ?MatrixType = null;
 
-                var rhs: MatrixType = -eq.result;
+                        var rhs: MatrixType = -eq.result;
 
-                for (eq.depends) |dep| {
-                    if (dep.idx == solveable.var_idx) {
-                        switch (variables[dep.idx]) {
-                            .unknown => {
-                                if (divide_after != null) {
-                                    std.debug.print("Solve path was wrong, needed to solve one value per eq, but tried multiple!", .{});
-                                    return utils.SolveErrors.OtherError;
+                        for (eq.depends) |dep| {
+                            if (dep.idx == solveable.var_idx) {
+                                switch (variables[dep.idx]) {
+                                    .unknown => {
+                                        if (divide_after != null) {
+                                            std.debug.print("Solve path was wrong, needed to solve one value per eq, but tried multiple!", .{});
+                                            return utils.SolveErrors.OtherError;
+                                        }
+
+                                        divide_after = dep.multiplier;
+                                    },
+                                    .value => {
+                                        std.debug.print("Solve path was wrong, variable that needed solving was already solved!", .{});
+                                        return utils.SolveErrors.OtherError;
+                                    },
                                 }
-
-                                divide_after = dep.multiplier;
-                            },
-                            .value => {
-                                std.debug.print("Solve path was wrong, variable that needed solving was already solved!", .{});
-                                return utils.SolveErrors.OtherError;
-                            },
+                            } else {
+                                switch (variables[dep.idx]) {
+                                    .unknown => {
+                                        std.debug.print("Solve path was wrong, variable that should be already solved was not solved yet!", .{});
+                                        return utils.SolveErrors.OtherError;
+                                    },
+                                    .value => |v| {
+                                        rhs += castType(MatrixType, v) orelse {
+                                            std.debug.panic("Not castable to type {}: {}", .{ @typeInfo(MatrixType), v });
+                                            unreachable;
+                                        } * dep.multiplier;
+                                    },
+                                }
+                            }
                         }
-                    } else {
-                        switch (variables[dep.idx]) {
-                            .unknown => {
-                                std.debug.print("Solve path was wrong, variable that should be already solved was not solved yet!", .{});
-                                return utils.SolveErrors.OtherError;
-                            },
-                            .value => |v| {
-                                rhs += castType(MatrixType, v) orelse {
-                                    std.debug.panic("Not castable to type {}: {}", .{ @typeInfo(MatrixType), v });
-                                    unreachable;
-                                } * dep.multiplier;
-                            },
+
+                        if (divide_after) |div_val| {
+                            //TODO: check if int and float are handled correctly
+
+                            const result: VariablesType = result_blk: {
+                                switch (@typeInfo(MatrixType)) {
+                                    .int => |_| {
+                                        if (isZero(MatrixType, div_val)) {
+                                            std.debug.print("divide should never be 0 here!", .{});
+                                            return utils.SolveErrors.OtherError;
+                                        }
+
+                                        const isDivisible = isEvenlyDivisible(
+                                            MatrixType,
+                                            rhs,
+                                            div_val,
+                                        );
+
+                                        if (!isDivisible) {
+                                            // not a whole solution, return null to indicate that!
+                                            return null;
+                                        }
+
+                                        const result = std.math.divExact(MatrixType, rhs, div_val) catch {
+                                            std.debug.panic("div wrong, this is an implementation error", .{});
+                                            unreachable;
+                                        };
+
+                                        if (result < 0) {
+                                            return null;
+                                        }
+
+                                        break :result_blk @as(VariablesType, @intCast(result));
+                                    },
+                                    .float => |_| {
+                                        if (isZero(MatrixType, div_val)) {
+                                            std.debug.print("divide should never be 0 here!", .{});
+                                            return utils.SolveErrors.OtherError;
+                                        }
+
+                                        const result = rhs / div_val;
+
+                                        if (floatNearInt(MatrixType, result) == null) {
+                                            // not a whole solution, return null to indicate that!
+                                            return null;
+                                        }
+
+                                        if (result < 0.0) {
+                                            return null;
+                                        }
+
+                                        break :result_blk @as(VariablesType, @intFromFloat(result));
+                                    },
+                                    else => {
+                                        @compileError("Not supported type for Matrix: " ++ @typeInfo(MatrixType));
+                                    },
+                                }
+                            };
+
+                            variables[solveable.var_idx] = .{ .value = result };
+                            sum += result;
+
+                            if (sum >= state.min) {
+                                return state.min;
+                            }
+                        } else {
+                            std.debug.print("Solve path was wrong, needed to solve one value per eq, but got none!", .{});
+                            return utils.SolveErrors.OtherError;
                         }
-                    }
-                }
-
-                if (divide_after) |div_val| {
-                    //TODO: check if int and float are handled correctly
-
-                    const result: VariablesType = result_blk: {
-                        switch (@typeInfo(MatrixType)) {
-                            .int => |_| {
-                                if (isZero(MatrixType, div_val)) {
-                                    std.debug.print("divide should never be 0 here!", .{});
-                                    return utils.SolveErrors.OtherError;
-                                }
-
-                                const rem = std.math.rem(
-                                    MatrixType,
-                                    rhs,
-                                    div_val,
-                                ) catch {
-                                    std.debug.panic("rem wrong, this is an implementation error", .{});
-                                    unreachable;
-                                };
-
-                                if (rem != 0) {
-                                    // not a whole solution, return null to indicate that!
-                                    return null;
-                                }
-
-                                const result = std.math.divExact(MatrixType, rhs, div_val) catch {
-                                    std.debug.panic("div wrong, this is an implementation error", .{});
-                                    unreachable;
-                                };
-
-                                if (result < 0) {
-                                    return null;
-                                }
-
-                                break :result_blk @as(VariablesType, @intCast(result));
-                            },
-                            .float => |_| {
-                                if (isZero(MatrixType, div_val)) {
-                                    std.debug.print("divide should never be 0 here!", .{});
-                                    return utils.SolveErrors.OtherError;
-                                }
-
-                                const result = rhs / div_val;
-
-                                if (floatIsNearInt(MatrixType, result)) {
-                                    // not a whole solution, return null to indicate that!
-                                    return null;
-                                }
-
-                                if (result < 0.0) {
-                                    return null;
-                                }
-
-                                break :result_blk @as(VariablesType, @intFromFloat(result));
-                            },
-                            else => {
-                                @compileError("Not supported type for Matrix: " ++ @typeInfo(MatrixType));
-                            },
-                        }
-                    };
-
-                    variables[solveable.var_idx] = .{ .value = result };
-                    sum += result;
-
-                    if (sum >= state.min) {
-                        return state.min;
-                    }
-                } else {
-                    std.debug.print("Solve path was wrong, needed to solve one value per eq, but got none!", .{});
-                    return utils.SolveErrors.OtherError;
+                    },
                 }
             }
 
@@ -543,7 +549,9 @@ fn DfsTwo(comptime MAX_STATE: comptime_int, comptime MatrixType: type) type {
             std.debug.assert(self.solve_path.free_variables.len >= state.free_variables.len);
 
             if (self.solve_path.free_variables.len == state.free_variables.len) {
-                return self.solve_equations(state);
+                const result = try self.solve_equations(state);
+                std.debug.print("solve_equations result: {?}\n", .{result});
+                return result;
             }
 
             var min = state.min;
@@ -580,6 +588,12 @@ fn DfsTwo(comptime MAX_STATE: comptime_int, comptime MatrixType: type) type {
 
             const result = try self.solve_rec(&state);
 
+            if (result) |res| {
+                if (res == std.math.maxInt(u64)) {
+                    std.debug.panic("Tried to solve quations, but nothings was solved:\n{f}", .{self.equations});
+                }
+            }
+
             return result;
         }
     };
@@ -613,10 +627,10 @@ fn pivotValue(comptime Type: type) Type {
     }
 }
 
-fn floatIsNearInt(comptime Type: type, value: Type) ?Type {
+fn floatNearInt(comptime Type: type, value: Type) ?Type {
     switch (@typeInfo(Type)) {
         .int => |_| {
-            @compileError("Not supported type for floatIsNearInt: " ++ @typeInfo(Type));
+            @compileError("Not supported type for floatNearInt: " ++ @typeInfo(Type));
         },
         .float => |_| {
             const rounded = std.math.round(value);
@@ -627,7 +641,21 @@ fn floatIsNearInt(comptime Type: type, value: Type) ?Type {
             return null;
         },
         else => {
-            @compileError("Not supported type for floatIsNearInt: " ++ @typeInfo(Type));
+            @compileError("Not supported type for floatNearInt: " ++ @typeInfo(Type));
+        },
+    }
+}
+
+fn negateType(comptime Type: type, value: Type) Type {
+    switch (@typeInfo(Type)) {
+        .int => |_| {
+            return value * -1;
+        },
+        .float => |_| {
+            return value * -1.0;
+        },
+        else => {
+            @compileError("Not supported type for negateType: " ++ @typeInfo(Type));
         },
     }
 }
@@ -641,9 +669,24 @@ fn isPivotValue(comptime Type: type, value: Type) bool {
             return @abs(value - pivotValue(Type)) <= std.math.floatEpsAt(Type, pivotValue(Type));
         },
         else => {
-            @compileError("Not supported type for isZero: " ++ @typeInfo(Type));
+            @compileError("Not supported type for isPivotValue: " ++ @typeInfo(Type));
         },
     }
+}
+
+fn isEvenlyDivisible(comptime Type: type, numerator: Type, denominator: Type) bool {
+    const denominatorFinal = if (denominator < 0) negateType(Type, denominator) else denominator;
+
+    const remResult = std.math.rem(
+        Type,
+        numerator,
+        denominatorFinal,
+    ) catch {
+        std.debug.panic("rem wrong, this is an implementation error", .{});
+        unreachable;
+    };
+
+    return isZero(Type, remResult);
 }
 
 fn Matrix(comptime Type: type) type {
@@ -725,9 +768,14 @@ fn Matrix(comptime Type: type) type {
             unknown,
         };
 
-        const Solveable = struct {
+        const SolveableWith = struct {
             eq_idx: usize,
             var_idx: usize,
+        };
+
+        const Solveable = union(enum) {
+            solve_with: SolveableWith,
+            already_solved,
         };
 
         const SolvePath = struct {
@@ -758,10 +806,7 @@ fn Matrix(comptime Type: type) type {
                 };
             }
 
-            const IsEqSolveable = union(enum) {
-                no,
-                yes: usize,
-            };
+            const IsEqSolveable = union(enum) { no, yes: usize, already_solved };
 
             pub fn get_solve_path(self: *Equations, allocator: utils.Allocator) utils.SolveErrors!?SolvePath {
                 var free_variables_list: utils.ListManaged(usize) = utils.ListManaged(usize).init(allocator);
@@ -814,19 +859,26 @@ fn Matrix(comptime Type: type) type {
                             if (which_one) |which_idx| {
                                 break :blk .{ .yes = which_idx };
                             } else {
-                                break :blk .no;
+                                break :blk .already_solved;
                             }
                         };
 
                         switch (is_solveable) {
                             .no => {},
+                            .already_solved => {
+                                state[eq_idx] = .solved;
+                                _ = equations_to_solve_idx.swapRemove(eq_s_idx);
+                                made_progress = true;
+
+                                try solve_order_list.append(.already_solved);
+                                break :for_loop;
+                            },
                             .yes => |var_idx| {
                                 state[eq_idx] = .solved;
                                 _ = equations_to_solve_idx.swapRemove(eq_s_idx);
                                 made_progress = true;
 
-                                //TODO: does every equation need to solve some variable, this data structure is correct if so, otherwise not!
-                                try solve_order_list.append(.{ .eq_idx = eq_idx, .var_idx = var_idx });
+                                try solve_order_list.append(.{ .solve_with = .{ .eq_idx = eq_idx, .var_idx = var_idx } });
                                 break :for_loop;
                             },
                         }
@@ -834,6 +886,7 @@ fn Matrix(comptime Type: type) type {
 
                     // not solveable
                     if (!made_progress) {
+                        std.debug.print("didn't make progress = {any} {any}\n", .{ free_variables_list.items, solve_order_list.items });
                         return null;
                     }
                 }
@@ -1032,8 +1085,8 @@ fn Matrix(comptime Type: type) type {
         }
 
         pub fn solve(self: *Self, allocator: utils.Allocator) utils.SolveErrors!Equations {
-            std.debug.print("SOLVE INIT\n", .{});
-            std.debug.print("Matrix: {f}\n", .{self});
+            // std.debug.print("SOLVE INIT\n", .{});
+            //std.debug.print("Matrix: {f}\n", .{self});
 
             // solving the equations using  Gaussian_elimination:
             // see: https://en.wikipedia.org/wiki/Gaussian_elimination
@@ -1065,8 +1118,8 @@ fn Matrix(comptime Type: type) type {
                 }
             }
 
-            std.debug.print("SOLVE OPER 1 finished\n", .{});
-            std.debug.print("Matrix: {f}\n", .{self});
+            //std.debug.print("SOLVE OPER 1 finished\n", .{});
+            //std.debug.print("Matrix: {f}\n", .{self});
 
             // perform op 3 until we have upper echelon form, triangular form
             // skip op 2, as we already have 1s in the places, given by the fact, that we have 0 or 1 before each prefix!
@@ -1086,9 +1139,9 @@ fn Matrix(comptime Type: type) type {
                         if (column_selected >= self.content.len) {
                             break :blk_result false;
                         }
-                        std.debug.print("MATRIX {f}\n", .{self});
+                        // std.debug.print("MATRIX {f}\n", .{self});
 
-                        std.debug.print("row at start: {} {} {any}\n", .{ column_selected, row_selected, self.content[column_selected] });
+                        // std.debug.print("row at start: {} {} {any}\n", .{ column_selected, row_selected, self.content[column_selected] });
 
                         if (column_selected == 0) {
                             // special handling for row 0, as this can't change from other rows, but the pivot offset can change here
@@ -1166,9 +1219,9 @@ fn Matrix(comptime Type: type) type {
 
                                 switch (@typeInfo(Type)) {
                                     .int => |_| {
-                                        std.debug.print("column_selected {} row_selected {}\n", .{ column_selected, row_selected });
+                                        // std.debug.print("column_selected {} row_selected {}\n", .{ column_selected, row_selected });
                                         loop1: for (0..column_selected) |c| {
-                                            std.debug.print("c {}\n", .{c});
+                                            //    std.debug.print("c {}\n", .{c});
                                             const value_to_check = self.content[c][row_selected];
 
                                             if (isZero(Type, value_to_check)) {
@@ -1184,18 +1237,13 @@ fn Matrix(comptime Type: type) type {
                                                 }
                                             }
 
-                                            const remResult = std.math.rem(
+                                            const isDivisible = isEvenlyDivisible(
                                                 Type,
                                                 current_row_value - target,
                                                 value_to_check,
-                                            ) catch {
-                                                std.debug.panic("rem wrong, this is an implementation error", .{});
-                                                unreachable;
-                                            };
+                                            );
 
-                                            std.debug.assert(remResult >= 0);
-
-                                            if (remResult == 0) {
+                                            if (isDivisible) {
                                                 const divResult = std.math.divFloor(
                                                     Type,
                                                     current_row_value - target,
@@ -1237,18 +1285,13 @@ fn Matrix(comptime Type: type) type {
                                                 }
                                             }
 
-                                            const remResult = std.math.rem(
+                                            const isDivisible = isEvenlyDivisible(
                                                 Type,
                                                 current_row_value - target,
                                                 value_to_check,
-                                            ) catch {
-                                                std.debug.panic("rem wrong, this is an implementation error", .{});
-                                                unreachable;
-                                            };
+                                            );
 
-                                            std.debug.assert(remResult >= 0);
-
-                                            if (isZero(T, remResult)) {
+                                            if (isDivisible) {
                                                 const divResult = std.math.divFloor(
                                                     Type,
                                                     current_row_value - target,
@@ -1262,7 +1305,7 @@ fn Matrix(comptime Type: type) type {
                                                     // not really doable, go to the next one
                                                 } else {
                                                     // only mark this compatible, if this float is near to an int, it would be doable all the time, but that is not rellay helpfull here
-                                                    if (floatIsNearInt(T, divResult)) |int| {
+                                                    if (floatNearInt(T, divResult)) |int| {
                                                         compatible_row = CompatibleRow{
                                                             .idx = c,
                                                             .scalar = int,
@@ -1281,11 +1324,11 @@ fn Matrix(comptime Type: type) type {
                                 }
 
                                 if (compatible_row) |c_row| {
-                                    std.debug.print("selected row {} with scalar {}\n", .{ c_row.idx, c_row.scalar });
-                                    std.debug.print("row before gauss_op_3: r_{} - {} * r_{} = {any} - {any}\n", .{ column_selected, c_row.scalar, c_row.idx, self.content[column_selected], self.content[c_row.idx] });
+                                    //   std.debug.print("selected row {} with scalar {}\n", .{ c_row.idx, c_row.scalar });
+                                    //  std.debug.print("row before gauss_op_3: r_{} - {} * r_{} = {any} - {any}\n", .{ column_selected, c_row.scalar, c_row.idx, self.content[column_selected], self.content[c_row.idx] });
 
                                     self.gauss_op_3(column_selected, c_row.idx, -c_row.scalar);
-                                    std.debug.print("row after gauss_op_3: r_{} - {} * r_{} = {any} - {any}\n", .{ column_selected, c_row.scalar, c_row.idx, self.content[column_selected], self.content[c_row.idx] });
+                                    //   std.debug.print("row after gauss_op_3: r_{} - {} * r_{} = {any} - {any}\n", .{ column_selected, c_row.scalar, c_row.idx, self.content[column_selected], self.content[c_row.idx] });
 
                                     { // assert that the result is as expected
                                         const result = self.content[column_selected][row_selected];
@@ -1297,15 +1340,15 @@ fn Matrix(comptime Type: type) type {
                                         }
                                     }
                                 } else {
-                                    std.debug.print("Matrix: {f}\n", .{self});
+                                    //   std.debug.print("Matrix: {f}\n", .{self});
 
-                                    std.debug.print("No row found to make the resulting value {} with gauss operation 3\n", .{target});
+                                    // std.debug.print("No row found to make the resulting value {} with gauss operation 3\n", .{target});
                                     if (isPivot) {
-                                        std.debug.panic("Although the strict requirement for upper echelon form doesn't need a 1 pivot, we need it here!", .{});
+                                        //std.debug.panic("Although the strict requirement for upper echelon form doesn't need a 1 pivot, we need it here!", .{});
                                     } else {
                                         std.debug.panic("Not possible to reach 0", .{});
+                                        unreachable;
                                     }
-                                    unreachable;
                                 }
                             }
 
@@ -1322,8 +1365,8 @@ fn Matrix(comptime Type: type) type {
                 }
             }
 
-            std.debug.print("SOLVE PART 1 finished\n", .{});
-            std.debug.print("Matrix: {f}\n", .{self});
+            // std.debug.print("SOLVE PART 1 finished\n", .{});
+            // std.debug.print("Matrix: {f}\n", .{self});
             std.debug.assert(self.isUpperEchelonForm());
 
             blk_done: { // part 2, try to get zeros in the upper triangle
@@ -1396,18 +1439,13 @@ fn Matrix(comptime Type: type) type {
                                             continue;
                                         }
 
-                                        const remResult = std.math.rem(
+                                        const isDivisible = isEvenlyDivisible(
                                             Type,
                                             current_row_value,
                                             value_to_check,
-                                        ) catch {
-                                            std.debug.panic("div wrong, this is an implementation error", .{});
-                                            unreachable;
-                                        };
+                                        );
 
-                                        std.debug.assert(remResult >= 0);
-
-                                        if (remResult == 0) {
+                                        if (isDivisible) {
                                             const divResult = std.math.divFloor(
                                                 Type,
                                                 current_row_value,
@@ -1451,18 +1489,13 @@ fn Matrix(comptime Type: type) type {
                                             continue;
                                         }
 
-                                        const remResult = std.math.rem(
+                                        const isDivisible = isEvenlyDivisible(
                                             Type,
                                             current_row_value,
                                             value_to_check,
-                                        ) catch {
-                                            std.debug.panic("rem wrong, this is an implementation error", .{});
-                                            unreachable;
-                                        };
+                                        );
 
-                                        std.debug.assert(remResult >= 0);
-
-                                        if (isZero(T, remResult)) {
+                                        if (isDivisible) {
                                             const divResult = std.math.divFloor(
                                                 Type,
                                                 current_row_value,
@@ -1476,7 +1509,7 @@ fn Matrix(comptime Type: type) type {
                                                 // not really doable, go to the next one
                                             } else {
                                                 // only mark this compatible, if this float is near to an int, it would be doable all the time, but that is not rellay helpfull here
-                                                if (floatIsNearInt(T, divResult)) |int| {
+                                                if (floatNearInt(T, divResult)) |int| {
                                                     compatible_row = CompatibleRow{
                                                         .idx = c,
                                                         .scalar = int,
@@ -1510,8 +1543,8 @@ fn Matrix(comptime Type: type) type {
                 }
             }
 
-            std.debug.print("SOLVE PART 2 finished\n", .{});
-            std.debug.print("Matrix: {f}\n", .{self});
+            //std.debug.print("SOLVE PART 2 finished\n", .{});
+            // std.debug.print("Matrix: {f}\n", .{self});
 
             const variable_len = self.row_len - 1;
             std.debug.assert(variable_len > 0);
@@ -1558,8 +1591,9 @@ fn Matrix(comptime Type: type) type {
                         bound_variables += 1;
                     }
                 }
-
-                std.debug.assert(bound_variables == self.content.len);
+                //   std.debug.print(" {} == {}\n", .{ bound_variables, self.content.len });
+                //NOTE: we can have fewer bound variables, as one might be free, just because it is eliminated and can be anything!
+                std.debug.assert(bound_variables <= self.content.len);
             }
 
             const equation_len = self.content.len;
@@ -1632,15 +1666,13 @@ fn solveForFewestJoltagePresses(comptime MatrixType: type, allocator: utils.Allo
     var matrix = try MatrixfromMachine(MatrixType, allocator, compact_buttons, machine.joltages);
     defer matrix.deinit(allocator);
 
-    std.debug.print("MATRIX INIT\n", .{});
-
     var equations = try matrix.solve(allocator);
     defer equations.deinit(allocator);
 
     const maybe_solve_path = try equations.get_solve_path(allocator);
 
     if (maybe_solve_path == null) {
-        std.debug.print("No solve path found: {f}\n", .{equations});
+        std.debug.print("No solve path found:\n{f}\n", .{equations});
         return utils.SolveErrors.NotSolved;
     }
     var solve_path = maybe_solve_path.?;
