@@ -1086,8 +1086,9 @@ fn Matrix(comptime Type: type) type {
                         if (column_selected >= self.content.len) {
                             break :blk_result false;
                         }
+                        std.debug.print("MATRIX {f}\n", .{self});
 
-                        std.debug.print("row at start: {} {any}\n", .{ column_selected, self.content[column_selected] });
+                        std.debug.print("row at start: {} {} {any}\n", .{ column_selected, row_selected, self.content[column_selected] });
 
                         if (column_selected == 0) {
                             // special handling for row 0, as this can't change from other rows, but the pivot offset can change here
@@ -1172,7 +1173,15 @@ fn Matrix(comptime Type: type) type {
 
                                             if (isZero(Type, value_to_check)) {
                                                 // not feasible, as 0 * scalar can't possible be the same as the desired value
-                                                continue;
+                                                continue :loop1;
+                                            }
+
+                                            for (0..row_selected) |r| {
+                                                const prev_row_value = self.content[c][r];
+                                                if (!isZero(Type, prev_row_value)) {
+                                                    // not feasible, as it would introduce non zeros in front of the current pivot
+                                                    continue :loop1;
+                                                }
                                             }
 
                                             const remResult = std.math.rem(
@@ -1217,7 +1226,15 @@ fn Matrix(comptime Type: type) type {
 
                                             if (isZero(Type, value_to_check)) {
                                                 // not feasible, as 0 * scalar can't possible be the same as the desired value
-                                                continue;
+                                                continue :loop1;
+                                            }
+
+                                            for (0..row_selected) |r| {
+                                                const prev_row_value = self.content[c][r];
+                                                if (!isZero(Type, prev_row_value)) {
+                                                    // not feasible, as it would introduce non zeros in front of the current pivot
+                                                    continue :loop1;
+                                                }
                                             }
 
                                             const remResult = std.math.rem(
@@ -1264,6 +1281,7 @@ fn Matrix(comptime Type: type) type {
                                 }
 
                                 if (compatible_row) |c_row| {
+                                    std.debug.print("selected row {} with scalar {}\n", .{ c_row.idx, c_row.scalar });
                                     std.debug.print("row before gauss_op_3: r_{} - {} * r_{} = {any} - {any}\n", .{ column_selected, c_row.scalar, c_row.idx, self.content[column_selected], self.content[c_row.idx] });
 
                                     self.gauss_op_3(column_selected, c_row.idx, -c_row.scalar);
@@ -1306,6 +1324,7 @@ fn Matrix(comptime Type: type) type {
 
             std.debug.print("SOLVE PART 1 finished\n", .{});
             std.debug.print("Matrix: {f}\n", .{self});
+            std.debug.assert(self.isUpperEchelonForm());
 
             blk_done: { // part 2, try to get zeros in the upper triangle
 
