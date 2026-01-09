@@ -349,8 +349,7 @@ fn solveFirst(allocator: utils.Allocator, input: utils.Str) utils.SolveResult {
     return utils.Solution{ .u64 = sum };
 }
 
-fn DfsTwo(comptime MAX_STATE: comptime_int, comptime MatrixType: type) type {
-    const BitType: type = UIntFromBits(MAX_STATE);
+fn DfsTwo(comptime MatrixType: type) type {
     const MatrixT = Matrix(MatrixType);
     const Eqs = MatrixT.Equations;
     const SolveP = MatrixT.SolvePath;
@@ -358,10 +357,13 @@ fn DfsTwo(comptime MAX_STATE: comptime_int, comptime MatrixType: type) type {
     const VariablesType = u64;
 
     return struct {
+        pub const Types = struct {
+            pub const Matrix = MatrixT;
+        };
+
         const Self = @This();
 
         alloc: utils.Allocator,
-        buttons: []const BitType,
         equations: *const Eqs,
         solve_path: *const SolveP,
         max_joltage_value: JoltageNum,
@@ -394,10 +396,9 @@ fn DfsTwo(comptime MAX_STATE: comptime_int, comptime MatrixType: type) type {
             }
         };
 
-        pub fn init(allocator: utils.Allocator, buttons: []const BitType, equations: *const Eqs, solve_path: *const SolveP, max_joltage_value: JoltageNum) Self {
+        pub fn init(allocator: utils.Allocator, equations: *const Eqs, solve_path: *const SolveP, max_joltage_value: JoltageNum) Self {
             return .{
                 .alloc = allocator,
-                .buttons = buttons,
                 .equations = equations,
                 .solve_path = solve_path,
                 .max_joltage_value = max_joltage_value,
@@ -410,7 +411,22 @@ fn DfsTwo(comptime MAX_STATE: comptime_int, comptime MatrixType: type) type {
         };
 
         pub fn solve_equations(self: *const Self, state: *const State) utils.SolveErrors!?u64 {
-            std.debug.print("solve equations:\n{f}\n", .{self.equations});
+            //std.debug.print("solve equations:\n{f}\n", .{self.equations});
+
+            var log = false;
+
+            if (state.free_variables.len == 2) {
+                if (state.free_variables[0] == 1 and state.free_variables[1] == 0) {
+                    log = true;
+                    std.debug.print("NOW ABORTING SOON\n", .{});
+                }
+            }
+
+            // defer {
+            //     if (log) {
+            //         std.debug.panic("HERE\n", .{});
+            //     }
+            // }
 
             var variables = try self.alloc.alignedAlloc(SolvedVariable, std.mem.Alignment.of(SolvedVariable), self.equations.variables.len);
             defer self.alloc.free(variables);
@@ -427,16 +443,19 @@ fn DfsTwo(comptime MAX_STATE: comptime_int, comptime MatrixType: type) type {
             var sum: u64 = utils.sum(u64, state.free_variables);
 
             for (self.solve_path.solve_order) |solveable_un| {
+                std.debug.print("variables: {any}\n(1, 0, 5, 1, 3, 0)\n", .{variables});
                 switch (solveable_un) {
                     .already_solved => {
+                        std.debug.print("already solved\n", .{});
                         //TODO: do we need to do something here?
                     },
                     .solve_with => |solveable| {
+                        std.debug.print("solve eq {}, var {}\n", .{ solveable.eq_idx, solveable.var_idx });
                         const eq = self.equations.equations[solveable.eq_idx];
 
                         var divide_after: ?MatrixType = null;
 
-                        var rhs: MatrixType = -eq.result;
+                        var rhs: MatrixType = eq.result;
 
                         for (eq.depends) |dep| {
                             if (dep.idx == solveable.var_idx) {
@@ -461,10 +480,12 @@ fn DfsTwo(comptime MAX_STATE: comptime_int, comptime MatrixType: type) type {
                                         return utils.SolveErrors.OtherError;
                                     },
                                     .value => |v| {
-                                        rhs += castType(MatrixType, v) orelse {
+                                        const rhs_value = castType(MatrixType, v) orelse {
                                             std.debug.panic("Not castable to type {}: {}", .{ @typeInfo(MatrixType), v });
                                             unreachable;
                                         } * dep.multiplier;
+
+                                        rhs -= rhs_value;
                                     },
                                 }
                             }
@@ -472,6 +493,8 @@ fn DfsTwo(comptime MAX_STATE: comptime_int, comptime MatrixType: type) type {
 
                         if (divide_after) |div_val| {
                             //TODO: check if int and float are handled correctly
+
+                            std.debug.print("divide = {} / {}\n", .{ rhs, div_val });
 
                             const result: VariablesType = result_blk: {
                                 switch (@typeInfo(MatrixType)) {
@@ -489,6 +512,7 @@ fn DfsTwo(comptime MAX_STATE: comptime_int, comptime MatrixType: type) type {
 
                                         if (!isDivisible) {
                                             // not a whole solution, return null to indicate that!
+                                            std.debug.print("not a whole solution: {} / {}\n", .{ rhs, div_val });
                                             return null;
                                         }
 
@@ -498,6 +522,7 @@ fn DfsTwo(comptime MAX_STATE: comptime_int, comptime MatrixType: type) type {
                                         };
 
                                         if (result < 0) {
+                                            std.debug.print("negative: {}\n", .{result});
                                             return null;
                                         }
 
@@ -542,6 +567,7 @@ fn DfsTwo(comptime MAX_STATE: comptime_int, comptime MatrixType: type) type {
                 }
             }
 
+            std.debug.print("variables: {any}\n(1, 0, 5, 1, 3, 0)\n", .{variables});
             return sum;
         }
 
@@ -550,7 +576,10 @@ fn DfsTwo(comptime MAX_STATE: comptime_int, comptime MatrixType: type) type {
 
             if (self.solve_path.free_variables.len == state.free_variables.len) {
                 const result = try self.solve_equations(state);
-                std.debug.print("solve_equations result: {?}\n", .{result});
+                std.debug.print("solve_equations result: {} {?}\n", .{ state, result });
+                //if (result == null) {
+                //    std.debug.panic("HERE: {f}", .{self.equations});
+                //}
                 return result;
             }
 
@@ -933,11 +962,11 @@ fn Matrix(comptime Type: type) type {
                     try writer.print("eq_{d} = ", .{i});
 
                     for (eq.depends, 0..) |dep, j| {
-                        try writer.print("{d} * " ++ variable_print, .{ dep.multiplier, dep.idx });
-
                         if (j != 0) {
                             try writer.writeAll(" + ");
                         }
+
+                        try writer.print("{d} * " ++ variable_print, .{ dep.multiplier, dep.idx });
                     }
 
                     try writer.print(" = {d}\n", .{eq.result});
@@ -1085,8 +1114,8 @@ fn Matrix(comptime Type: type) type {
         }
 
         pub fn solve(self: *Self, allocator: utils.Allocator) utils.SolveErrors!Equations {
-            // std.debug.print("SOLVE INIT\n", .{});
-            //std.debug.print("Matrix: {f}\n", .{self});
+            std.debug.print("SOLVE INIT\n", .{});
+            std.debug.print("Matrix: {f}\n", .{self});
 
             // solving the equations using  Gaussian_elimination:
             // see: https://en.wikipedia.org/wiki/Gaussian_elimination
@@ -1680,9 +1709,11 @@ fn solveForFewestJoltagePresses(comptime MatrixType: type, allocator: utils.Allo
 
     const max_joltage_value = std.mem.max(JoltageNum, machine.joltages.items);
 
-    const DFS = DfsTwo(MAX_BUTTON_SIZE, MatrixType);
+    const DFS = DfsTwo(MatrixType);
 
-    var dfs: DFS = DFS.init(allocator, compact_buttons, &equations, &solve_path, max_joltage_value);
+    std.debug.print("START EQ:\n{f}\n", .{equations});
+
+    var dfs: DFS = DFS.init(allocator, &equations, &solve_path, max_joltage_value);
 
     const result = try dfs.solve();
 
@@ -1743,9 +1774,192 @@ pub fn main() !void {
     try day.run(gpa.allocator());
 }
 
-test "day 10" {
+// test "day 10" {
+//     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+//     defer _ = gpa.deinit();
+
+//     try day.@"test"(gpa.allocator());
+// }
+
+test "day 10 - solve equations for minimum - test eq 0" {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     defer _ = gpa.deinit();
+    var alloc = gpa.allocator();
+    const MatrixTypeTest: type = i64;
 
-    try day.@"test"(gpa.allocator());
+    var machines = try parseMachines(alloc, "[.##.] (3) (1,3) (2) (2,3) (0,2) (0,1) {3,5,4,7}");
+    defer machines.deinit();
+
+    try std.testing.expectEqual(machines.underlying.items.len, 1);
+
+    const machine = machines.underlying.items[0];
+
+    const DFS = DfsTwo(MatrixTypeTest);
+
+    const LocalMatrixType = DFS.Types.Matrix;
+
+    var equations: LocalMatrixType.Equations = blk: {
+        const variable_len = 6;
+
+        const variables = try alloc.alignedAlloc(LocalMatrixType.VariableType, std.mem.Alignment.of(LocalMatrixType.VariableType), variable_len);
+
+        // x_0  x_1  x_2  x_3  x_4  x_5
+        //   b    b    b    f    b    f
+        variables[0] = .bound;
+        variables[1] = .bound;
+        variables[2] = .bound;
+        variables[3] = .free;
+        variables[4] = .bound;
+        variables[5] = .free;
+
+        const equation_len = 4;
+        const equations = try alloc.alignedAlloc(LocalMatrixType.Equation, std.mem.Alignment.of(LocalMatrixType.Equation), equation_len);
+
+        {
+            // eq_0 = 1 * x_0  + 1 * x_3   + -1 * x_5 = 2
+            const temp = [_]LocalMatrixType.EquationVariable{
+                .{ .multiplier = 1, .idx = 0 },
+                .{ .multiplier = 1, .idx = 3 },
+                .{ .multiplier = -1, .idx = 5 },
+            };
+            equations[0] = LocalMatrixType.Equation{ .depends = try alloc.dupe(LocalMatrixType.EquationVariable, &temp), .result = 2 };
+        }
+
+        {
+            // eq_1 = 1 * x_1  + 1 * x_3   + -1 * x_5  = 1
+            const temp = [_]LocalMatrixType.EquationVariable{
+                .{ .multiplier = 1, .idx = 1 },
+                .{ .multiplier = 1, .idx = 3 },
+                .{ .multiplier = -1, .idx = 5 },
+            };
+            equations[1] = LocalMatrixType.Equation{ .depends = try alloc.dupe(LocalMatrixType.EquationVariable, &temp), .result = 1 };
+        }
+
+        {
+            // eq_2 = 1 * x_2  + 1 * x_5  = 5
+            const temp = [_]LocalMatrixType.EquationVariable{
+                .{ .multiplier = 1, .idx = 2 },
+                .{ .multiplier = 1, .idx = 5 },
+            };
+            equations[2] = LocalMatrixType.Equation{ .depends = try alloc.dupe(LocalMatrixType.EquationVariable, &temp), .result = 5 };
+        }
+
+        {
+            // eq_3 = 1 * x_4  + 1 * x_5  = 3
+            const temp = [_]LocalMatrixType.EquationVariable{
+                .{ .multiplier = 1, .idx = 4 },
+                .{ .multiplier = 1, .idx = 5 },
+            };
+            equations[3] = LocalMatrixType.Equation{ .depends = try alloc.dupe(LocalMatrixType.EquationVariable, &temp), .result = 3 };
+        }
+
+        break :blk LocalMatrixType.Equations.init(variables, equations);
+    };
+
+    defer equations.deinit(alloc);
+
+    const maybe_solve_path = try equations.get_solve_path(alloc);
+
+    try std.testing.expect(maybe_solve_path != null);
+    var solve_path = maybe_solve_path.?;
+    defer solve_path.deinit(alloc);
+
+    const max_joltage_value = std.mem.max(JoltageNum, machine.joltages.items);
+
+    var dfs: DFS = DFS.init(alloc, &equations, &solve_path, max_joltage_value);
+
+    std.debug.print("EQ: {f}\n", .{equations});
+
+    const result = try dfs.solve();
+
+    // one solution would be: (1, 3, 3, 0, 1, 2)
+    try std.testing.expectEqual(10, result);
 }
+
+// test "day 10 - solve equations for minimum - test eq 1" {
+//     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+//     defer _ = gpa.deinit();
+//     var alloc = gpa.allocator();
+//     const MatrixTypeTest: type = i64;
+
+//     var machines = try parseMachines(alloc, "[.##.] (3) (1,3) (2) (2,3) (0,2) (0,1) {3,5,4,7}");
+//     defer machines.deinit();
+
+//     try std.testing.expectEqual(machines.underlying.items.len, 1);
+
+//     const machine = machines.underlying.items[0];
+
+//     const compact_buttons = try machine.compactButtons(alloc, MAX_BUTTON_SIZE);
+//     defer alloc.free(compact_buttons);
+
+//     const DFS = DfsTwo(MAX_BUTTON_SIZE, MatrixTypeTest);
+
+//     const LocalMatrixType = DFS.Types.Matrix;
+
+//     var equations: LocalMatrixType.Equations = blk: {
+//         const variable_len = 5;
+
+//         const variables = try alloc.alignedAlloc(LocalMatrixType.VariableType, std.mem.Alignment.of(LocalMatrixType.VariableType), variable_len);
+
+//         // x_0  x_1  x_2  x_3  x_4
+//         //   b    b    b    f    b
+//         variables[0] = .bound;
+//         variables[1] = .bound;
+//         variables[2] = .bound;
+//         variables[3] = .free;
+//         variables[4] = .bound;
+
+//         const equation_len = 5;
+//         const equations = try alloc.alignedAlloc(LocalMatrixType.Equation, std.mem.Alignment.of(LocalMatrixType.Equation), equation_len);
+
+//         {
+//             // eq_0 = 1 * x_0  + 1 * x_3   = 7
+//             const temp = [_]LocalMatrixType.EquationVariable{ .{ .multiplier = 1, .idx = 0 }, .{ .multiplier = 1, .idx = 3 } };
+//             equations[0] = LocalMatrixType.Equation{ .depends = try alloc.dupe(LocalMatrixType.EquationVariable, &temp), .result = 7 };
+//         }
+
+//         {
+//             // eq_1 = 1 * x_1 + 1 * x_3    = 2
+//             const temp = [_]LocalMatrixType.EquationVariable{ .{ .multiplier = 1, .idx = 1 }, .{ .multiplier = 1, .idx = 3 } };
+//             equations[1] = LocalMatrixType.Equation{ .depends = try alloc.dupe(LocalMatrixType.EquationVariable, &temp), .result = 2 };
+//         }
+
+//         {
+//             // eq_2 = 1 * x_2   = 5
+//             const temp = [_]LocalMatrixType.EquationVariable{
+//                 .{ .multiplier = 1, .idx = 2 },
+//             };
+//             equations[2] = LocalMatrixType.Equation{ .depends = try alloc.dupe(LocalMatrixType.EquationVariable, &temp), .result = 5 };
+//         }
+
+//         {
+//             // eq_3 = 2 * x_4   = 0
+//             const temp = [_]LocalMatrixType.EquationVariable{.{ .multiplier = 2, .idx = 4 }};
+//             equations[3] = LocalMatrixType.Equation{ .depends = try alloc.dupe(LocalMatrixType.EquationVariable, &temp), .result = 0 };
+//         }
+
+//         {
+//             // eq_4 = -1 * x_4   = 0
+//             const temp = [_]LocalMatrixType.EquationVariable{.{ .multiplier = -1, .idx = 4 }};
+//             equations[4] = LocalMatrixType.Equation{ .depends = try alloc.dupe(LocalMatrixType.EquationVariable, &temp), .result = 0 };
+//         }
+
+//         break :blk LocalMatrixType.Equations.init(variables, equations);
+//     };
+
+//     defer equations.deinit(alloc);
+
+//     const maybe_solve_path = try equations.get_solve_path(alloc);
+
+//     try std.testing.expect(maybe_solve_path != null);
+//     var solve_path = maybe_solve_path.?;
+//     defer solve_path.deinit(alloc);
+
+//     const max_joltage_value = std.mem.max(JoltageNum, machine.joltages.items);
+
+//     var dfs: DFS = DFS.init(alloc, compact_buttons, &equations, &solve_path, max_joltage_value);
+
+//     const result = try dfs.solve();
+
+//     try std.testing.expectEqual(12, result);
+// }
